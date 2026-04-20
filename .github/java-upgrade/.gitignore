@@ -1,0 +1,35 @@
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache and compiled fiPUSHles
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Jupyter artifacts
+.ipynb_checkpoints/
+
+# Spark output markers/checksums
+*.crc
+_SUCCESS
+
+# Generated model/output artifacts
+notebook_outputs/
+check_data_sample.csv/
+data_stocks_features.parquet/
+stocks_data.parquet/
+
+# Editor/OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs and temporary files
+*.log
+*.tmp
+*.swp
