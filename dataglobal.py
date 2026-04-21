@@ -1,12 +1,21 @@
 import yfinance as yf
 import pandas as pd
+from pathlib import Path
 
 # Danh sách các mã cần lấy
-symbols = ['AAPL', 'TSLA']  # Apple và Tesla
+symbols = [
+    # US mega-cap tech
+    'AAPL', 'MSFT', 'NVDA', 'AMZN', 'GOOGL', 'META',
+    # EV / Auto
+    'TSLA', 'RIVN', 'LCID', 'F', 'GM'
+]
 
 # Thiết lập khoảng thời gian
-start_date = '2019-01-01'
+start_date = '2013-01-01'
 end_date = '2026-03-10'
+
+output_dir = Path("csv")
+output_dir.mkdir(parents=True, exist_ok=True)
 
 print("Đang tải dữ liệu US stocks...\n")
 
@@ -23,7 +32,8 @@ for symbol in symbols:
     data.columns = ['time', 'open', 'high', 'low', 'close', 'volume']
     
     # Lưu thành CSV riêng
-    data.to_csv(f'{symbol}.csv', index=False)
-    print(f"Hoàn thành lưu {symbol}.csv ({len(data)} dòng)\n")
+    output_file = output_dir / f"{symbol}.csv"
+    data.to_csv(output_file, index=False)
+    print(f"Hoàn thành lưu {output_file} ({len(data)} dòng)\n")
 
 print("Hoàn thành lưu tất cả dữ liệu!")
