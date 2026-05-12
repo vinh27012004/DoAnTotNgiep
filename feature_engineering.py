@@ -1,14 +1,14 @@
 from pyspark.sql import SparkSession
 from pyspark.sql.window import Window
 from pyspark.sql import functions as F
+from pathlib import Path
 import os
 
 # 1. Khởi tạo Spark
 spark = SparkSession.builder.appName("StockFeatureEngineering").getOrCreate()
 
-# 2. Đọc dữ liệu từ file Parquet
-data_dir = os.path.expanduser("~/Documents/VSC/data")
-parquet_file = os.path.join(data_dir, "stocks_data.parquet")
+# 2. Đọc dữ liệu từ file Parquet (tự động theo thư mục hiện tại)
+parquet_file = str(Path("stocks_data.parquet").resolve())
 df = spark.read.parquet(parquet_file)
 
 # 3. Định nghĩa "Cửa sổ" (Window) - quan trọng nhất
@@ -29,7 +29,7 @@ df = df.withColumn("daily_return", (F.col("close") - F.col("prev_close")) / F.co
 df_final = df.dropna()
 
 # 6. Lưu kết quả ra file Parquet mới dành cho huấn luyện
-output_file = os.path.join(data_dir, "data_stocks_features.parquet")
+output_file = str(Path("data_stocks_features.parquet").resolve())
 df_final.write.mode("overwrite").parquet(output_file)
 
 print("Đã tạo xong bộ đặc trưng (Features)!")
