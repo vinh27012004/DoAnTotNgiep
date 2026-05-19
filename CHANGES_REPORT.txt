@@ -1,0 +1,321 @@
+============================================================
+BÁO CÁO CÁC THAY ĐỔI – ĐỒ ÁN PHÂN TÍCH VÀ DỰ BÁO GIÁ CHỨNG KHOÁN
+Công nghệ: PySpark + TensorFlow/Keras
+File notebook: Stock_Analysis_PySpark.ipynb
+============================================================
+
+TỔNG QUAN
+---------
+Dự án ban đầu gồm pipeline phân tích giá cổ phiếu sử dụng PySpark với
+3 mô hình (Logistic Regression, Random Forest, GBTClassifier).
+
+Sau quá trình cải tiến, pipeline được nâng cấp lên 7 mô hình (thêm
+LinearSVC, XGBoost, LSTM, GRU), 35 features kỹ thuật, Ensemble Weighted
+Voting, và Walk-forward Validation.
+
+------------------------------------------------------------
+NHÓM A: SỬA LỖI KỸ THUẬT
+------------------------------------------------------------
+
+A1. Sửa đường dẫn cứng (Hardcoded Path)
+    - Vấn đề: data_dir = "/home/admin/Documents/VSC/data/csv" → lỗi trên máy khác
+    - Sửa: data_dir = str(Path("csv").resolve())
+    - Áp dụng: Stock_Analysis_PySpark.ipynb (cell 5), feature_engineering.py
+    - Lợi ích: Notebook chạy được trên mọi máy, không cần cấu hình thủ công
+
+A2. Xóa weightCol khỏi GBTClassifier
+    - Vấn đề: GBTClassifier(weightCol='weight') → runtime error (PySpark MLlib
+              không hỗ trợ tham số này cho GBT)
+    - Sửa: Xóa tham số weightCol khỏi GBTClassifier
+    - Áp dụng: cell 27
+
+A3. Xóa cell trùng lặp
+    - Vấn đề: Cell "PHẦN CUỐI" xuất hiện 2 lần (cell 42 và 43 giống hệt nhau)
+    - Sửa: Xóa cell 43, giữ lại cell 42
+    - Lợi ích: Notebook gọn gàng, chuyên nghiệp hơn
+
+A4. Sắp xếp lại thứ tự cell
+    - Vấn đề: Cell markdown giải thích "PHẦN 11C: THỬ NGHIỆM TĂNG ĐỘ CHÍNH XÁC"
+              nằm sau 2 cell code thí nghiệm → đọc ngược logic
+    - Sửa: Di chuyển markdown lên trước cell code
+    - Áp dụng: Cells 30–32
+
+A5. Thêm ghi chú kỹ thuật cho MACD và OBV
+    - Vấn đề: MACD dùng SMA (avg) thay vì EMA (ewm) không có ghi chú → hội đồng
+              có thể bắt bẻ về tính chính xác
+    - Sửa: Thêm comment giải thích "SMA proxy trong PySpark – PySpark không hỗ
+            trợ ewm() nội sinh; EMA thực được tính trong pipeline học sâu"
+    - Áp dụng: cell 13
+
+A6. Sửa feature_engineering.py
+    - Vấn đề: Dùng os.path.expanduser("~/Documents/VSC/data") → hardcoded
+    - Sửa: Dùng Path("stocks_data.parquet").resolve()
+    - Áp dụng: feature_engineering.py
+
+------------------------------------------------------------
+NHÓM B: CẢI TIẾN FEATURES (35 features tổng)
+------------------------------------------------------------
+
+B1. Features nhóm 1 (được thêm từ trước)
+    - MA20, MA50 (đường trung bình dài hạn)
+    - price_vs_ma5, price_vs_ma20 (giá so với MA – tín hiệu momentum)
+    - Stochastic %K(14) – phát hiện overbought/oversold
+    - ATR(14) – Average True Range – đo biến động thực tế
+    - OBV signal (proxy) – xác nhận xu hướng qua volume
+
+B2. Features nhóm 2 (được thêm từ trước)
+    - RSI(7) – RSI ngắn hạn (nhạy hơn RSI 14)
+    - Volatility 10d, 20d (rolling std của daily return)
+    - Momentum 5d, 10d (giá hiện tại / giá N ngày trước - 1)
+    - MACD Histogram (macd - signal)
+    - Bollinger %B (vị trí giá trong dải Bollinger)
+    - ATR ratio (ATR / close – chuẩn hóa theo giá)
+    - Volume MA ratio (volume / MA20_volume)
+    - Log-transform Volume (log1p) – giảm skew phân phối
+
+B3. Features nhóm 3 – MỚI THÊM trong phiên này
+    - Williams %R(14): (High14 - Close) / (High14 - Low14) × (-100)
+      → Bổ sung cho Stoch%K, phát hiện điểm đảo chiều
+    - CCI(14) – Commodity Channel Index: (TP - MA_TP) / (0.015 × std_TP)
+      → Đo mức giá lệch so với trung bình, phát hiện xu hướng mạnh
+    - ADX(14) – Average Directional Index
+      → Đo ĐỘ MẠNH xu hướng (trending vs ranging), không có trong các
+         chỉ báo khác
+    - lag5_return, lag10_return (daily return trễ 5 và 10 ngày)
+      → Bắt được momentum trung hạn
+    - lag1_high, lag1_low (cần cho tính ADX)
+
+B4. Fix MACD sang EMA thực (trong pipeline học sâu)
+    - Vấn đề: PySpark không có hàm ewm() → MACD dùng avg() làm proxy
+    - Sửa: Trong phần học sâu (Pandas), tính lại:
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_real = ema12 - ema26
+        macd_hist_real = macd_real - macd_real.ewm(span=9).mean()
+    - Kết quả: Pipeline ML (PySpark) giữ SMA proxy; Pipeline DL (Pandas)
+               dùng EMA thực – chuẩn hơn về mặt kỹ thuật
+
+------------------------------------------------------------
+NHÓM C: CẢI TIẾN TIỀN XỬ LÝ
+------------------------------------------------------------
+
+C1. StandardScaler
+    - Chuẩn hóa tất cả features về phân phối chuẩn (mean=0, std=1)
+    - Quan trọng cho Logistic Regression và LinearSVC (nhạy với scale)
+    - Fit trên tập train, transform tập test (tránh data leakage)
+
+C2. Class Weighting
+    - Vấn đề: Dữ liệu mất cân đối (label 0 ≠ label 1)
+    - Sửa: weight = total / (2 × count_of_class)
+    - Áp dụng: LR, RF, LinearSVC
+    - Lợi ích: Tránh model bias về phía lớp chiếm đa số
+
+C3. Log-transform Volume
+    - volume_log = log1p(volume)
+    - Giải quyết vấn đề phân phối lệch (skewed) của volume giao dịch
+
+C4. Winsorize outliers
+    - Clip các giá trị cực đoan (daily_return ngoài [-15%, +15%], v.v.)
+    - Ngăn outliers làm lệch quá trình học
+
+------------------------------------------------------------
+NHÓM D: CẢI TIẾN MÔ HÌNH ML (PYSPARK)
+------------------------------------------------------------
+
+D1. Thêm metric AUC-ROC
+    - Sử dụng BinaryClassificationEvaluator với metricName='areaUnderROC'
+    - Thêm cho tất cả model: LR, RF, GBT, LinearSVC
+    - AUC-ROC vào bảng so sánh cuối
+    - Lý do: Metric quan trọng cho bài phân loại nhị phân, đánh giá chính
+              xác hơn Accuracy khi dữ liệu mất cân đối
+
+D2. Cải tiến Logistic Regression
+    - maxIter: 100 → 200 (hội tụ tốt hơn)
+    - regParam: giảm → 0.001 (giảm regularization)
+    - Thêm weightCol='weight' (class balancing)
+    - Sử dụng features đã qua StandardScaler
+
+D3. Cải tiến Random Forest
+    - numTrees: 50 → 150 (giảm variance)
+    - maxDepth: 10 → 12 (tăng capacity)
+    - minInstancesPerNode: 5 → 3 (giảm underfitting)
+    - featureSubsetStrategy='sqrt' (chuẩn)
+    - Thêm weightCol='weight'
+
+D4. Cải tiến GBTClassifier
+    - maxIter: 50 → 200
+    - maxDepth: 5 → 7 → 5 (tối ưu tránh overfit)
+    - stepSize: 0.1 → 0.03 (học chậm hơn, tổng quát hơn)
+    - subsamplingRate: 0.8 → 0.7
+    - featureSubsetStrategy='sqrt'
+    - minInstancesPerNode=5
+
+D5. Thêm LinearSVC (model thứ 4)
+    - from pyspark.ml.classification import LinearSVC
+    - Tối ưu margin thay vì likelihood → phân ranh giới rõ hơn LR
+    - maxIter=200, regParam=0.001
+    - Không dùng weightCol (PySpark LinearSVC không hỗ trợ)
+    - AUC-ROC dùng rawPrediction thay vì probability
+
+D6. CrossValidator – Grid Search cho Random Forest
+    - 3-fold cross validation
+    - Grid: numTrees ∈ {100, 150, 200}, maxDepth ∈ {10, 12},
+            minInstancesPerNode ∈ {2, 3}
+    - Tổng: 12 tổ hợp × 3 folds = 36 lần train
+    - Tìm bộ tham số tốt nhất tự động
+
+------------------------------------------------------------
+NHÓM E: ENSEMBLE VÀ ĐÁNH GIÁ NÂNG CAO
+------------------------------------------------------------
+
+E1. Ensemble Weighted Voting (LR + RF + GBT + SVC)
+    - Thay majority vote bằng trọng số theo accuracy:
+        weight_model = accuracy_model / sum(all_accuracies)
+        final = 1 nếu sum(weight_i × pred_i) ≥ 0.5
+    - Thêm LinearSVC vào ensemble (4 models tổng)
+    - High-Confidence mode: chỉ dự báo khi cả 4 model đồng ý (4/4)
+      → Coverage thấp hơn nhưng accuracy cao nhất
+
+E2. Walk-forward Validation (5 folds)
+    - Thay fixed split bằng rolling window:
+        Fold 1: Train 2013–2018, Test 2019
+        Fold 2: Train 2013–2019, Test 2020
+        Fold 3: Train 2013–2020, Test 2021
+        Fold 4: Train 2013–2021, Test 2022
+        Fold 5: Train 2013–2022, Test 2023
+    - Mỗi fold: StringIndexer → VectorAssembler → StandardScaler →
+                Class Weight → RandomForest
+    - Kết quả: mean accuracy ± std → đánh giá độ ổn định thực tế
+    - Phát hiện nếu model overfit trên test set cố định
+
+E3. Đánh giá đa metrics
+    - Accuracy: tỷ lệ dự báo đúng
+    - Error Rate: 1 - Accuracy
+    - LogLoss: đánh giá chất lượng xác suất (LR, RF, GBT)
+    - Brier Score: MSE giữa xác suất và nhãn thực
+    - AUC-ROC: diện tích dưới đường ROC (tất cả model)
+
+------------------------------------------------------------
+NHÓM F: HỌC SÂU VÀ XGBOOST (MỚI – PHẦN 11G)
+------------------------------------------------------------
+
+F1. XGBoost (ML chuẩn công nghiệp)
+    - Thư viện: xgboost (scikit-learn interface)
+    - Chạy trên Pandas (không qua PySpark)
+    - Tham số: n_estimators=400, max_depth=5, learning_rate=0.03,
+               subsample=0.8, colsample_bytree=0.8,
+               reg_alpha=0.1, reg_lambda=1.0
+    - scale_pos_weight = n_negative / n_positive (class balancing)
+    - Evaluation: accuracy + AUC-ROC + feature importance top 10
+
+F2. LSTM – Long Short-Term Memory
+    - Framework: TensorFlow/Keras (fallback: MLPClassifier sklearn)
+    - Kiến trúc:
+        Input(lookback=20, n_features)
+        → LSTM(64, return_sequences=True, L2=0.001)
+        → Dropout(0.3)
+        → LSTM(32, L2=0.001)
+        → LayerNormalization → Dropout(0.3)
+        → Dense(16, activation='relu', L2=0.001)
+        → Dropout(0.2)
+        → Dense(1, activation='sigmoid')
+    - Optimizer: Adam(lr=0.001)
+    - Loss: binary_crossentropy
+    - Callbacks: EarlyStopping(patience=10, restore_best_weights=True),
+                 ReduceLROnPlateau(factor=0.5, patience=5)
+    - batch_size=64, epochs=100 (early stopping thực tế)
+    - class_weight để cân bằng imbalance
+    - Sequence: 20 ngày liên tiếp per ticker (tạo theo từng ticker riêng)
+
+F3. GRU – Gated Recurrent Unit
+    - Kiến trúc tương tự LSTM nhưng dùng GRU layers
+    - GRU có ít tham số hơn LSTM → huấn luyện nhanh hơn
+    - Thường cho kết quả tương đương hoặc tốt hơn LSTM
+    - Input/Output/Callbacks: giống LSTM
+
+F4. Real EMA MACD trong pipeline học sâu
+    - Trước khi tạo sequences, recompute MACD bằng EMA thực:
+        ema12 = close.ewm(span=12, adjust=False).mean()
+        ema26 = close.ewm(span=26, adjust=False).mean()
+        macd_real = (ema12 - ema26) / close  # chuẩn hóa
+        macd_hist_real = (macd_real - macd_real.ewm(span=9).mean()) / close
+    - Thay thế macd và macd_signal (SMA proxy) trong feature set DL
+
+F5. Bảng so sánh cuối – Tất cả 7 mô hình
+    Model              | Type         | Accuracy | AUC-ROC
+    ───────────────────|──────────────|──────────|────────
+    Logistic Regression| ML (Spark)   |   ?      |   ?
+    Random Forest      | ML (Spark)   |   ?      |   ?
+    GBTClassifier      | ML (Spark)   |   ?      |   ?
+    LinearSVC          | ML (Spark)   |   ?      |   ?
+    XGBoost            | ML (Pandas)  |   ?      |   ?
+    LSTM               | DL (Keras)   |   ?      |   ?
+    GRU                | DL (Keras)   |   ?      |   ?
+
+------------------------------------------------------------
+TỔNG HỢP THAY ĐỔI FILE
+------------------------------------------------------------
+
+Stock_Analysis_PySpark.ipynb:
+  - Cells: 44 → 50 (thêm 6 cells mới)
+  - Cell 5:  Sửa hardcoded path → Path("csv").resolve()
+  - Cell 13: Thêm 5 features mới (Williams %R, CCI14, ADX14,
+             lag5/10_return, lag1_high/low); cập nhật ghi chú MACD
+  - Cell 19: Cập nhật feature_columns (30 → 35 features)
+  - Cell 25: Thêm AUC-ROC cho LR và RF
+  - Cell 27: Cập nhật GBT; thêm AUC-ROC vào bảng so sánh
+  - Cell 28–29 (mới): LinearSVC + bảng so sánh 4 model
+  - Cell 30–31: CrossValidator (giữ nguyên)
+  - Cell 32–33: Ensemble Weighted Vote (cập nhật: 4 models + weighted)
+  - Cell 34–35: Walk-forward Validation (mới)
+  - Cell 36–39 (mới): XGBoost + LSTM + GRU + bảng so sánh cuối
+  - Cell 49: Final Summary (14 cải tiến)
+
+feature_engineering.py:
+  - Sửa hardcoded path → Path().resolve()
+  - Thêm import pathlib
+
+------------------------------------------------------------
+DỮ LIỆU SỬ DỤNG
+------------------------------------------------------------
+
+Cổ phiếu Việt Nam (17 mã, nguồn: vnstock/VCI):
+  VCB, BID, CTG, TCB, MBB, ACB (Banking)
+  VIC, VHM, KDH, NLG (Real Estate)
+  VNM, MSN, SAB (Consumer)
+  HPG, HSG, NKG (Steel)
+  FPT (Technology)
+
+Cổ phiếu Mỹ (11 mã, nguồn: yfinance):
+  AAPL, MSFT, NVDA, AMZN, GOOGL, META (Tech)
+  TSLA, RIVN, LCID, F, GM (Auto/EV)
+
+Khoảng thời gian: 2013–2026 (~10 năm lịch sử)
+Tổng dữ liệu: 28 mã × ~2,500 ngày ≈ 70,000 rows
+
+------------------------------------------------------------
+SO SÁNH VỚI DỰ ÁN THAM KHẢO (b3nnytran/StockPrediction)
+------------------------------------------------------------
+
+Điểm chung:
+  - Cùng dùng yfinance, RSI, MACD, Bollinger, Stoch%K, ATR, volume
+  - Cùng có LSTM, GRU (học sâu)
+  - Cùng có XGBoost
+  - Cùng có StandardScaler, temporal split
+
+Điểm khác biệt của dự án này:
+  + PySpark → xử lý dữ liệu lớn (Big Data)
+  + 28 mã (VN + US) vs 3 mã của họ (chỉ US)
+  + Bài toán phân loại (Classification) thay vì hồi quy (Regression)
+  + Williams %R, CCI, ADX (họ không có)
+  + Walk-forward validation (họ không có)
+  + Ensemble Voting 4 models (họ không có)
+  + High-Confidence mode (họ không có)
+
+Điểm họ có mà chưa thêm:
+  - Gold price (XAU/USD) làm macro signal
+  - News Sentiment (VADER + Alpha Vantage API)
+
+============================================================
+Ngày tạo báo cáo: 2026-05-13
+============================================================
