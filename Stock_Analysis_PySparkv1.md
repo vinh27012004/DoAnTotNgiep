@@ -73,13 +73,13 @@ spark.sparkContext.setLogLevel("ERROR")
 
 print("✓ SparkSession đã khởi tạo thành công!")
 print(f"  - Spark Version: {spark.version}")
-print(f"  - Python Version: {pd.__version__}")
+print(f"  - Pandas Version: {pd.__version__}")
 print(f"  - NumPy Version: {np.__version__}")
 ```
 
     ✓ SparkSession đã khởi tạo thành công!
       - Spark Version: 4.1.1
-      - Python Version: 3.0.3
+      - Pandas Version: 3.0.3
       - NumPy Version: 2.4.5
     
 
@@ -204,7 +204,7 @@ print("=" * 80)
 df_raw.show(10, truncate=False)
 
 print("\n" + "=" * 80)
-print("THỐNG KÊ CỌC BẢN")
+print("THỐNG KÊ CƠ BẢN")
 print("=" * 80)
 df_raw.describe(['open', 'high', 'low', 'close', 'volume']).show()
 
@@ -249,7 +249,7 @@ print(f"Tổng {len(ticker_list)} cổ phiếu: {', '.join(ticker_list)}")
     only showing top 10 rows
     
     ================================================================================
-    THỐNG KÊ CỌC BẢN
+    THỐNG KÊ CƠ BẢN
     ================================================================================
     +-------+------------------+------------------+------------------+------------------+-------------------+
     |summary|              open|              high|               low|             close|             volume|
@@ -410,9 +410,9 @@ Sử dụng **PySpark Window Functions** (phân chia theo ticker, sắp xếp th
 | Vấn đề | Giải pháp |
 |--------|-----------|
 | **Nhiễu từ các phiên biến động nhỏ** – các ngày tăng/giảm < 1% không mang tín hiệu rõ ràng | Dùng **label có ngưỡng**: chỉ coi là tăng/giảm khi `\|future_return\| > 1.0%` |
-| **OHLCV thô không đủ thông tin thị trường** | Bổ sung 34 features kỹ thuật (RSI, MACD, BB, ATR, ADX, CCI, ...) |
+| **OHLCV thô không đủ thông tin thị trường** | Bổ sung 47–52 features kỹ thuật (RSI, MACD, BB, ATR, ADX, CCI, ...) |
 
-### Nhóm đặc trưng (34 features tổng)
+### Nhóm đặc trưng (47 features VN / 52 features US)
 
 1. **Return & Lag**: `daily_return`, `lag1–3_close`, `lag1_volume`, `prev_high/low`, `lag5/10_return`
 2. **Moving Average**: MA5, MA10, MA20, MA50, `price_vs_ma`
@@ -619,17 +619,6 @@ df_features = df_features \
              (col('close') - col('bb_lower')) / (col('bb_upper') - col('bb_lower'))).otherwise(None)) \
     .withColumn('atr_ratio',
         when(col('close') != 0, col('atr14') / col('close')).otherwise(None))
-
-# ── NEW FEATURES: MA Cross Ratio & Range Expansion ──
-df_features = df_features \
-    .withColumn('ma5_vs_ma20',
-        when(col('ma20') != 0, col('ma5') / col('ma20') - 1).otherwise(None)) \
-    .withColumn('ma20_vs_ma50',
-        when(col('ma50') != 0, col('ma20') / col('ma50') - 1).otherwise(None)) \
-    .withColumn('hl5',  avg('high_low_range').over(windowSpec.rowsBetween(-4, 0))) \
-    .withColumn('hl20', avg('high_low_range').over(windowSpec.rowsBetween(-19, 0))) \
-    .withColumn('hl_ratio',
-        when(col('hl20') != 0, col('hl5') / col('hl20')).otherwise(1.0))
 
 # ── CẢI TIẾN 11: Lag Returns 2 và 3 ──
 df_features = df_features \
@@ -1035,7 +1024,7 @@ Sau khi có đầy đủ features, chia `df_features` thành 2 nhánh. **Cả 2 
 | Thị trường | Label | Edge (acc − naive) | AUC | Kết luận |
 |------------|-------|--------------------|-----|----------|
 | **US** | next-day ±1.5% | **+0.8%** | ~0.53 | Gần như random — thị trường hiệu quả (EMH) |
-| **VN** | next-day ±1.5% | **+7.3%** | ~0.63 | Có signal thật — thị trường kém hiệu quả |
+| **VN** | next-day ±1.5% | **+7.3%** | ~0.57 | Có signal thật — thị trường kém hiệu quả |
 
 > **Phát hiện quan trọng**: VN dự báo được tốt hơn US ~9 lần. Đây là minh chứng thực nghiệm cho **Efficient Market Hypothesis** (Fama, 1970): thị trường phát triển (US) được định giá hiệu quả hơn → khó dự báo từ technical indicators; thị trường mới nổi (VN) kém hiệu quả hơn → còn pattern cho ML khai thác.
 >
@@ -1087,9 +1076,9 @@ def create_labels_3d(df, threshold):
         .withColumn('year', year('time'))
     )
 
-df_us = create_labels(df_features.filter(col('ticker').isin(US_TICKERS)), threshold=0.010)
-# VN tang nguong len 2.0% de loc nhieu (thi truong VN bien dong manh hon)
-df_vn = create_labels(df_features.filter(col('ticker').isin(VN_TICKERS)), threshold=0.020)
+df_us = create_labels(df_features.filter(col('ticker').isin(US_TICKERS)), threshold=0.015)
+# VN doi sang next-day 1.5% (thuc nghiem cho thay edge +7.3% > 3-day 0.8% edge +5.5%)
+df_vn = create_labels(df_features.filter(col('ticker').isin(VN_TICKERS)), threshold=0.015)
 
 print('\n' + '=' * 60)
 print('THONG KE 3 NHOM')
@@ -1116,8 +1105,8 @@ def create_labels_full(df, threshold):
         .withColumn('year', year('time'))
     )
 
-df_us_all = create_labels_full(df_features.filter(col('ticker').isin(US_TICKERS)), threshold=0.010)
-df_vn_all = create_labels_full(df_features.filter(col('ticker').isin(VN_TICKERS)), threshold=0.020)
+df_us_all = create_labels_full(df_features.filter(col('ticker').isin(US_TICKERS)), threshold=0.015)
+df_vn_all = create_labels_full(df_features.filter(col('ticker').isin(VN_TICKERS)), threshold=0.015)
 print(f'  df_us_all: {df_us_all.count():,d} rows (incl. neutral=2.0)')
 print(f'  df_vn_all: {df_vn_all.count():,d} rows (incl. neutral=2.0)')
 ```
@@ -1130,9 +1119,9 @@ print(f'  df_vn_all: {df_vn_all.count():,d} rows (incl. neutral=2.0)')
     ============================================================
     THONG KE 3 NHOM
     ============================================================
-      US        : 40,990 rows | L0=19,023(46%) L1=21,967(54%)
+      US        : 27,043 rows | L0=12,639(47%) L1=14,404(53%)
                  Tickers: AAPL, AMD, AMZN, BA, BAC, COST, CVX, DIS, F, GM, GOOGL, GS, INTC, JPM, LLY, MA, META, MSFT, NFLX, NVDA, TSLA, UNH, V, VZ, WFC, WMT, XOM
-      VN        : 20,969 rows | L0=9,483(45%) L1=11,486(55%)
+      VN        : 29,944 rows | L0=14,015(47%) L1=15,929(53%)
                  Tickers: ACB, BCM, BID, BVH, CTG, DHG, FPT, GAS, GMD, HDB, HPG, HSG, KDH, MBB, MSN, MWG, NKG, NLG, PLX, PNJ, POW, REE, SAB, SSI, STB, TCB, VCB, VHM, VIC, VJC, VNM, VPB, VRE
       df_us_all: 89,120 rows (incl. neutral=2.0)
       df_vn_all: 90,338 rows (incl. neutral=2.0)
@@ -1182,8 +1171,6 @@ COMMON_FEATURES = [
     'bb_position', 'overnight_gap', 'up_days_5',
     # Breakout & multi-day accumulation signals
     'proximity_52w_high', 'volume_spike_3d',
-    # MA crossover ratios & range expansion
-    'ma5_vs_ma20', 'ma20_vs_ma50', 'hl_ratio',
 ]
 
 # Features dac thu chi co y nghia voi VN
@@ -1220,11 +1207,6 @@ print(f'FEATURE_COLS_VN   : {len(FEATURE_COLS_VN)} features')
 
 
 def run_spark_pipeline(df_market, market_name, feature_cols=None):
-    # Local imports de tranh xung dot voi sklearn namespace
-    from pyspark.ml.classification import (LogisticRegression as SparkLR,
-                                            RandomForestClassifier as SparkRF,
-                                            GBTClassifier as SparkGBT,
-                                            LinearSVC as SparkSVC)
     if feature_cols is None:
         feature_cols = FEATURE_COLS
     sep = '=' * 70
@@ -1253,60 +1235,19 @@ def run_spark_pipeline(df_market, market_name, feature_cols=None):
     df_tr_asm = df_tr_asm.withColumn('weight',
         when(col('label') == 1.0, tot/(2.0*lc.get(1.0,1))).otherwise(tot/(2.0*lc.get(0.0,1))))
 
-    # Validation set grid search (phan tach theo thoi gian, tranh lookahead)
-    df_sub_tr = df_tr_asm.filter(col('year') <= 2019)
-    df_val    = df_tr_asm.filter((col('year') >= 2020) & (col('year') <= 2021))
-    n_sub, n_val = df_sub_tr.count(), df_val.count()
-    print(f'  Grid search | sub_train={n_sub:,d} | val={n_val:,d}')
-    auc_ev_gs = BinaryClassificationEvaluator(rawPredictionCol='rawPrediction', labelCol='label', metricName='areaUnderROC')
-
-    # RF grid search
-    best_rf_auc, best_rf_params = -1.0, {'maxDepth': 6, 'numTrees': 200}
-    for _d in [4, 6]:
-        for _n in [100, 200]:
-            try:
-                _pv = SparkRF(featuresCol='features', labelCol='label', weightCol='weight',
-                                             numTrees=_n, maxDepth=_d, minInstancesPerNode=10,
-                                             featureSubsetStrategy='sqrt', seed=42
-                                            ).fit(df_sub_tr).transform(df_val)
-                _auc = auc_ev_gs.evaluate(_pv)
-            except Exception: _auc = 0.0
-            print(f'    RF depth={_d} trees={_n}: val_AUC={_auc:.4f}')
-            if _auc > best_rf_auc:
-                best_rf_auc, best_rf_params = _auc, {'maxDepth': _d, 'numTrees': _n}
-
-    # GBT grid search
-    best_gbt_auc, best_gbt_params = -1.0, {'maxDepth': 5, 'stepSize': 0.03}
-    for _d in [3, 5]:
-        for _s in [0.03, 0.1]:
-            try:
-                _pv = SparkGBT(featuresCol='features', labelCol='label', maxIter=100,
-                                    maxDepth=_d, stepSize=_s, subsamplingRate=0.7,
-                                    featureSubsetStrategy='sqrt', minInstancesPerNode=5, seed=42
-                                   ).fit(df_sub_tr).transform(df_val)
-                _auc = auc_ev_gs.evaluate(_pv)
-            except Exception: _auc = 0.0
-            print(f'    GBT depth={_d} step={_s}: val_AUC={_auc:.4f}')
-            if _auc > best_gbt_auc:
-                best_gbt_auc, best_gbt_params = _auc, {'maxDepth': _d, 'stepSize': _s}
-
-    print(f'  Best RF : {best_rf_params} (val_AUC={best_rf_auc:.4f})')
-    print(f'  Best GBT: {best_gbt_params} (val_AUC={best_gbt_auc:.4f})')
-
     models_cfg = {
-        'LR':  SparkLR(featuresCol='features', labelCol='label', weightCol='weight',
+        'LR':  LogisticRegression(featuresCol='features', labelCol='label', weightCol='weight',
                                    maxIter=200, regParam=0.001, elasticNetParam=0.0),
-        'RF':  SparkRF(featuresCol='features', labelCol='label', weightCol='weight',
-                                       numTrees=best_rf_params['numTrees'],
-                                       maxDepth=best_rf_params['maxDepth'],
-                                       minInstancesPerNode=10,
+        'RF':  RandomForestClassifier(featuresCol='features', labelCol='label', weightCol='weight',
+                                       numTrees=200,
+                                       maxDepth=6,               # 減 từ 12 → 6 để tránh overfit
+                                       minInstancesPerNode=10,   # tăng từ 3 → 10
                                        featureSubsetStrategy='sqrt',
                                        seed=42),
-        'GBT': SparkGBT(featuresCol='features', labelCol='label',
-                              maxIter=200, maxDepth=best_gbt_params['maxDepth'],
-                              stepSize=best_gbt_params['stepSize'], subsamplingRate=0.7,
+        'GBT': GBTClassifier(featuresCol='features', labelCol='label',
+                              maxIter=200, maxDepth=5, stepSize=0.03, subsamplingRate=0.7,
                               featureSubsetStrategy='sqrt', minInstancesPerNode=5, seed=42),
-        'SVC': SparkSVC(featuresCol='features', labelCol='label', maxIter=200, regParam=0.001),
+        'SVC': LinearSVC(featuresCol='features', labelCol='label', maxIter=200, regParam=0.001),
     }
     print('  Training models:')
     trained, predictions = {}, {}
@@ -1374,11 +1315,11 @@ print('ok run_spark_pipeline() dinh nghia xong')
 
 ```
 
-    COMMON_FEATURES   : 42 features
+    COMMON_FEATURES   : 39 features
     VN_ONLY_FEATURES  : 8 features
     US_ONLY_FEATURES  : 13 features
-    FEATURE_COLS_US   : 55 features
-    FEATURE_COLS_VN   : 50 features
+    FEATURE_COLS_US   : 52 features
+    FEATURE_COLS_VN   : 47 features
     ok run_spark_pipeline() dinh nghia xong
     
 
@@ -1426,32 +1367,6 @@ def run_xgb_pipeline(df_spark, market_name, feature_cols=None):
     df_ts = df_pd[df_pd['year'] >= 2022]
     print(f'  Train: {len(df_tr):,d} | Test: {len(df_ts):,d}')
 
-    # Validation set grid search (tranh lookahead)
-    df_sub_tr = df_tr[df_tr['year'] <= 2019]
-    df_val    = df_tr[(df_tr['year'] >= 2020) & (df_tr['year'] <= 2021)]
-    sc_gs = SS()
-    X_sub = sc_gs.fit_transform(df_sub_tr[feat_xgb].values.astype(np.float64))
-    y_sub = df_sub_tr['label'].values.astype(int)
-    X_val = sc_gs.transform(df_val[feat_xgb].values.astype(np.float64))
-    y_val = df_val['label'].values.astype(int)
-    cnt_sub = np.bincount(y_sub)
-    spw_sub = float(cnt_sub[0]) / float(max(int(cnt_sub[1]) if len(cnt_sub) > 1 else 1, 1))
-
-    print(f'  XGB grid search | sub_train={len(df_sub_tr):,d} | val={len(df_val):,d}')
-    best_xgb_auc, best_xgb_params = -1.0, {'max_depth': 5, 'learning_rate': 0.03}
-    for _d in [3, 5]:
-        for _lr in [0.03, 0.1]:
-            m_gs = XGBCls(n_estimators=200, max_depth=_d, learning_rate=_lr,
-                           subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0,
-                           scale_pos_weight=spw_sub, random_state=42, n_jobs=-1, verbosity=0)
-            m_gs.fit(X_sub, y_sub, verbose=False)
-            prob_v = m_gs.predict_proba(X_val)[:, 1]
-            auc_v  = roc_auc_score(y_val, prob_v) if len(np.unique(y_val)) > 1 else 0.0
-            print(f'    XGB depth={_d} lr={_lr}: val_AUC={auc_v:.4f}')
-            if auc_v > best_xgb_auc:
-                best_xgb_auc, best_xgb_params = auc_v, {'max_depth': _d, 'learning_rate': _lr}
-    print(f'  Best XGB: {best_xgb_params} (val_AUC={best_xgb_auc:.4f})')
-
     sc_xgb = SS()
     X_tr = sc_xgb.fit_transform(df_tr[feat_xgb].values.astype(np.float64))
     y_tr = df_tr['label'].values.astype(int)
@@ -1462,8 +1377,7 @@ def run_xgb_pipeline(df_spark, market_name, feature_cols=None):
     n0 = int(counts[0]) if len(counts) > 0 else 1
     n1 = int(counts[1]) if len(counts) > 1 else 1
 
-    mdl = XGBCls(n_estimators=400, max_depth=best_xgb_params['max_depth'],
-                  learning_rate=best_xgb_params['learning_rate'],
+    mdl = XGBCls(n_estimators=400, max_depth=5, learning_rate=0.03,
                   subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0,
                   scale_pos_weight=float(n0)/float(max(n1,1)),
                   random_state=42, n_jobs=-1, verbosity=0, eval_metric='logloss')
@@ -1510,7 +1424,7 @@ Xây dựng pipeline học sâu dùng **Keras (TensorFlow)** cho 2 model chuỗi
 | Kỹ thuật | Mô tả |
 |---|---|
 | **StandardScaler** | Fit trên train, transform train+test → tránh data leakage |
-| **2-layer LSTM/GRU + Dropout 0.3** | Tránh overfitting |
+| **2-layer LSTM/GRU + Dropout 0.5** | Tránh overfitting |
 | **Class Weighting** | Cân bằng nhãn 0/1 |
 | **EarlyStopping** | Dừng sớm khi val_loss không cải thiện |
 | **ReduceLROnPlateau** | Giảm learning rate khi plateau |
@@ -1611,7 +1525,7 @@ def run_dl_pipeline(df_spark, market_name, feature_cols=None,
             for i in range(seq_len, len(Xg)):
                 lbl = lbl_map.get(tg[i], -1)
                 if lbl in (0, 1):
-                    X_seq.append(Xg[i-seq_len+1:i+1])
+                    X_seq.append(Xg[i-seq_len:i])
                     y_seq.append(lbl)
                     tk_seq.append(tkr)
                     tm_seq.append(tg[i])
@@ -1671,15 +1585,12 @@ def run_dl_pipeline(df_spark, market_name, feature_cols=None,
         results[layer_type] = {
             'accuracy': acc, 'auc': auc, 'model': mdl,
             'ticker_acc': ticker_acc, 'history': hist.history, 'n_epochs': n_ep,
-            'y_ts': y_ts, 'y_pred': y_pred, 'y_prob': y_prob,
-            'tk_ts': tk_ts, 'tm_ts': [pd.Timestamp(t) for t in tm_ts],
         }
 
     print(f'\nok {market_name} Deep Learning pipeline xong!')
     return {'market': market_name, 'metrics': results,
             'scaler': scaler, 'features': feat_dl, 'seq_len': seq_len,
-            'n_train': len(X_tr), 'n_test': len(X_ts),
-            'df_ts_pd': df_ts}
+            'n_train': len(X_tr), 'n_test': len(X_ts)}
 
 
 print('ok run_dl_pipeline() -- full-context seqs, BatchNorm, Dropout=0.5, L2 reg')
@@ -1705,20 +1616,9 @@ res_us_xgb = run_xgb_pipeline(df_us,  'US', FEATURE_COLS_US)
 
     
     ======================================================================
-    SPARK ML — US STOCKS (55 features)
+    SPARK ML — US STOCKS (52 features)
     ======================================================================
-      Train: 26,509 | Test: 14,481
-      Grid search | sub_train=18,987 | val=7,522
-        RF depth=4 trees=100: val_AUC=0.5275
-        RF depth=4 trees=200: val_AUC=0.5299
-        RF depth=6 trees=100: val_AUC=0.5262
-        RF depth=6 trees=200: val_AUC=0.5231
-        GBT depth=3 step=0.03: val_AUC=0.5351
-        GBT depth=3 step=0.1: val_AUC=0.5347
-        GBT depth=5 step=0.03: val_AUC=0.5336
-        GBT depth=5 step=0.1: val_AUC=0.5434
-      Best RF : {'maxDepth': 4, 'numTrees': 200} (val_AUC=0.5299)
-      Best GBT: {'maxDepth': 5, 'stepSize': 0.1} (val_AUC=0.5434)
+      Train: 16,978 | Test: 10,065
       Training models:
         LR... ok
         RF... ok
@@ -1727,29 +1627,23 @@ res_us_xgb = run_xgb_pipeline(df_us,  'US', FEATURE_COLS_US)
     
       Model        Accuracy    AUC-ROC
       --------------------------------
-      LR             0.5066     0.5088
-      RF             0.5056     0.5133
-      GBT            0.5263     0.5302
-      SVC            0.5269     0.5003
-      Ensemble       0.5263
+      LR             0.5158     0.5229
+      RF             0.5192     0.5224
+      GBT            0.5273     0.5289
+      SVC            0.5211     0.5116
+      Ensemble       0.5209
     
-      Top 5 features (US): sp500_ret1d, sp500_mom5, sp500_ma_ratio, vix_level, vix_ma_ratio
+      Top 5 features (US): sp500_ret1d, vix_ma_ratio, vix_level, sp500_ma_ratio, vix_ret1d
     
     ok US Spark pipeline xong!
     
     ======================================================================
-    XGBOOST — US STOCKS (55 features)
+    XGBOOST — US STOCKS (52 features)
     ======================================================================
-      40,990 rows | 27 tickers
-      Train: 26,509 | Test: 14,481
-      XGB grid search | sub_train=18,987 | val=7,522
-        XGB depth=3 lr=0.03: val_AUC=0.5157
-        XGB depth=3 lr=0.1: val_AUC=0.5268
-        XGB depth=5 lr=0.03: val_AUC=0.5085
-        XGB depth=5 lr=0.1: val_AUC=0.5229
-      Best XGB: {'max_depth': 3, 'learning_rate': 0.1} (val_AUC=0.5268)
-      XGBoost: Accuracy=0.5169  AUC-ROC=0.5246
-      Top 5: sp500_ret1d, vix_ma_ratio, vix_ret1d, vix_level, sp500_ma_ratio
+      27,043 rows | 27 tickers
+      Train: 16,978 | Test: 10,065
+      XGBoost: Accuracy=0.5185  AUC-ROC=0.5285
+      Top 5: vix_ma_ratio, sp500_ret1d, vix_ret1d, vix_level, sp500_mom5
     
     ok US XGBoost xong!
     
@@ -1763,17 +1657,17 @@ res_us_dl = run_dl_pipeline(df_us, 'US', FEATURE_COLS_US, df_full_spark=df_us_al
 
     
     ======================================================================
-    DEEP LEARNING (LSTM+GRU) -- US (55 features)
+    DEEP LEARNING (LSTM+GRU) -- US (52 features)
     ======================================================================
-      Full context: 89,120 rows vs 40,990 labeled
-      Train: 26,322 seqs | Test: 14,160 seqs | Shape: (26322, 20, 55)
-      Class: 0=12,057 | 1=14,265 | weight={0: 1.0915650659368001, 1: 0.9226077812828601}
+      Full context: 89,120 rows vs 27,043 labeled
+      Train: 16,866 seqs | Test: 9,816 seqs | Shape: (16866, 20, 52)
+      Class: 0=7,756 | 1=9,110 | weight={0: 1.087287261474987, 1: 0.9256860592755214}
     
       Training LSTM...
-      LSTM: Acc=0.5134  AUC=0.5185  (epochs=40)
+      LSTM: Acc=0.5147  AUC=0.5167  (epochs=40)
     
       Training GRU...
-      GRU: Acc=0.5142  AUC=0.5209  (epochs=40)
+      GRU: Acc=0.5089  AUC=0.5101  (epochs=40)
     
     ok US Deep Learning pipeline xong!
     
@@ -1788,20 +1682,9 @@ res_vn_xgb = run_xgb_pipeline(df_vn,  'VN', FEATURE_COLS_VN)
 
     
     ======================================================================
-    SPARK ML — VN STOCKS (50 features)
+    SPARK ML — VN STOCKS (47 features)
     ======================================================================
-      Train: 13,201 | Test: 7,768
-      Grid search | sub_train=8,819 | val=4,382
-        RF depth=4 trees=100: val_AUC=0.6101
-        RF depth=4 trees=200: val_AUC=0.6139
-        RF depth=6 trees=100: val_AUC=0.6137
-        RF depth=6 trees=200: val_AUC=0.6201
-        GBT depth=3 step=0.03: val_AUC=0.6007
-        GBT depth=3 step=0.1: val_AUC=0.6056
-        GBT depth=5 step=0.03: val_AUC=0.5908
-        GBT depth=5 step=0.1: val_AUC=0.5900
-      Best RF : {'maxDepth': 6, 'numTrees': 200} (val_AUC=0.6201)
-      Best GBT: {'maxDepth': 3, 'stepSize': 0.1} (val_AUC=0.6056)
+      Train: 18,879 | Test: 11,065
       Training models:
         LR... ok
         RF... ok
@@ -1810,29 +1693,23 @@ res_vn_xgb = run_xgb_pipeline(df_vn,  'VN', FEATURE_COLS_VN)
     
       Model        Accuracy    AUC-ROC
       --------------------------------
-      LR             0.5336     0.5458
-      RF             0.5502     0.5845
-      GBT            0.5523     0.5725
-      SVC            0.5256     0.5427
-      Ensemble       0.5475
+      LR             0.5276     0.5378
+      RF             0.5477     0.5709
+      GBT            0.5533     0.5702
+      SVC            0.5177     0.5351
+      Ensemble       0.5510
     
-      Top 5 features (VN): vni_mom5, daily_return, price_vs_ma5, vni_ret1d, close_open_return
+      Top 5 features (VN): daily_return, vni_mom5, vni_ret1d, volume_ma_ratio, vni_ma_ratio
     
     ok VN Spark pipeline xong!
     
     ======================================================================
-    XGBOOST — VN STOCKS (50 features)
+    XGBOOST — VN STOCKS (47 features)
     ======================================================================
-      20,969 rows | 33 tickers
-      Train: 13,201 | Test: 7,768
-      XGB grid search | sub_train=8,819 | val=4,382
-        XGB depth=3 lr=0.03: val_AUC=0.6002
-        XGB depth=3 lr=0.1: val_AUC=0.5938
-        XGB depth=5 lr=0.03: val_AUC=0.6028
-        XGB depth=5 lr=0.1: val_AUC=0.5882
-      Best XGB: {'max_depth': 5, 'learning_rate': 0.03} (val_AUC=0.6028)
-      XGBoost: Accuracy=0.5587  AUC-ROC=0.5814
-      Top 5: daily_return, vni_mom5, vni_ret1d, vni_ma_ratio, price_vs_ma5
+      29,944 rows | 33 tickers
+      Train: 18,879 | Test: 11,065
+      XGBoost: Accuracy=0.5494  AUC-ROC=0.5633
+      Top 5: vni_ret1d, vni_mom5, vni_ma_ratio, daily_return, volume_ma_ratio
     
     ok VN XGBoost xong!
     
@@ -1846,508 +1723,437 @@ res_vn_dl = run_dl_pipeline(df_vn, 'VN', FEATURE_COLS_VN, df_full_spark=df_vn_al
 
     
     ======================================================================
-    DEEP LEARNING (LSTM+GRU) -- VN (50 features)
+    DEEP LEARNING (LSTM+GRU) -- VN (47 features)
     ======================================================================
-      Full context: 90,338 rows vs 20,969 labeled
-      Train: 13,025 seqs | Test: 7,531 seqs | Shape: (13025, 20, 50)
-      Class: 0=5,738 | 1=7,287 | weight={0: 1.1349773440223074, 1: 0.8937148346370248}
+      Full context: 90,338 rows vs 29,944 labeled
+      Train: 18,644 seqs | Test: 10,762 seqs | Shape: (18644, 20, 47)
+      Class: 0=8,554 | 1=10,090 | weight={0: 1.0897825578676643, 1: 0.9238850346878097}
     
       Training LSTM...
-      LSTM: Acc=0.5367  AUC=0.5536  (epochs=40)
+      LSTM: Acc=0.5077  AUC=0.5104  (epochs=40)
     
       Training GRU...
-      GRU: Acc=0.5639  AUC=0.5886  (epochs=40)
+      GRU: Acc=0.5162  AUC=0.5216  (epochs=40)
     
     ok VN Deep Learning pipeline xong!
     
 
+## PHẦN 10: SO SÁNH KẾT QUẢ US vs VN
+
+Tong hop toan bo 6 model (LR, RF, GBT, SVC, Ensemble, XGBoost) cho hai thi truong US va VN.
+
 
 ```python
-# ── CHON MO HINH TOT NHAT CHO US VA VN ──────────────────────────────────
-import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.metrics import f1_score
-
-def _composite(acc, auc, f1_macro, w=(0.3, 0.4, 0.3)):
-    """Composite = 0.3*acc + 0.4*auc + 0.3*f1_macro.
-    Phat hien model degenerate (e.g. SVC luon du doan UP):
-    - Accuracy cao nhung AUC ~ 0.5 va F1_macro thap -> composite thap.
-    """
-    return w[0] * acc + w[1] * auc + w[2] * f1_macro
-
-def find_best_model(res, res_xgb, res_dl):
-    """Chon model tot nhat dua tren composite score.
-
-    Composite = 0.3*Accuracy + 0.4*AUC + 0.3*F1_macro.
-    F1_macro duoc tinh truc tiep tu predictions da luu de khong phai re-run.
-    """
-    scores = {}
-
-    # ── Spark models (LR / RF / GBT / SVC) ──────────────────────────────────
+rows = []
+for res, res_xgb, res_dl in [(res_us, res_us_xgb, res_us_dl),
+                              (res_vn, res_vn_xgb, res_vn_dl)]:
+    m = res['market']
     for mname, met in res['metrics'].items():
-        try:
-            pred_pd = (res['predictions'][mname]
-                       .select('label', 'prediction').toPandas())
-            y_true_m = pred_pd['label'].astype(int).values
-            y_pred_m = pred_pd['prediction'].astype(int).values
-            f1 = f1_score(y_true_m, y_pred_m, average='macro', zero_division=0)
-        except Exception:
-            f1 = 0.0
-        acc, auc = met['accuracy'], met['auc']
-        scores[mname] = {
-            'accuracy': acc, 'auc': auc, 'f1_macro': f1,
-            'composite': _composite(acc, auc, f1),
-        }
-
-    # ── XGBoost ───────────────────────────────────────────────────────────────
-    y_true_x = np.asarray(res_xgb['y_ts']).astype(int)
-    y_pred_x = np.asarray(res_xgb['y_pred']).astype(int)
-    f1_xgb   = f1_score(y_true_x, y_pred_x, average='macro', zero_division=0)
-    acc_x, auc_x = res_xgb['accuracy'], res_xgb['auc']
-    scores['XGBoost'] = {
-        'accuracy': acc_x, 'auc': auc_x, 'f1_macro': f1_xgb,
-        'composite': _composite(acc_x, auc_x, f1_xgb),
-    }
-
-    # ── Deep Learning (LSTM / GRU) ────────────────────────────────────────────
+        rows.append({'Market': m, 'Model': mname,
+                     'Accuracy': met['accuracy'], 'AUC': met['auc']})
+    rows.append({'Market': m, 'Model': 'XGBoost',
+                 'Accuracy': res_xgb['accuracy'], 'AUC': res_xgb['auc']})
     for dl_name, dl_met in res_dl['metrics'].items():
-        acc_d, auc_d = dl_met['accuracy'], dl_met['auc']
-        if 'y_ts' in dl_met and 'y_pred' in dl_met:
-            y_true_d = np.asarray(dl_met['y_ts']).astype(int)
-            y_pred_d = np.asarray(dl_met['y_pred']).astype(int)
-            f1_d = f1_score(y_true_d, y_pred_d, average='macro', zero_division=0)
-        else:
-            # Pipeline cu chua luu y_pred -> uoc tinh F1 = (acc * 2 - 1) theo heuristic
-            f1_d = max(0.0, acc_d * 2 - 1)
-        scores[dl_name] = {
-            'accuracy': acc_d, 'auc': auc_d, 'f1_macro': f1_d,
-            'composite': _composite(acc_d, auc_d, f1_d),
-        }
+        rows.append({'Market': m, 'Model': dl_name,
+                     'Accuracy': dl_met['accuracy'], 'AUC': dl_met['auc']})
 
-    best_name = max(scores, key=lambda k: scores[k]['composite'])
-    best = scores[best_name]
-    return best_name, best['accuracy'], best['auc'], scores
+compare_df = pd.DataFrame(rows)
+print('=' * 70)
+print('SO SANH 8 MODEL: US vs VN  (5 Spark + XGBoost + LSTM + GRU)')
+print('=' * 70)
+pivot = compare_df.pivot_table(index='Model', columns='Market', values='Accuracy')
+if 'US' in pivot.columns and 'VN' in pivot.columns:
+    pivot['Diff(US-VN)'] = pivot['US'] - pivot['VN']
+print(pivot.round(4).sort_values('US', ascending=False).to_string())
 
+print('\n' + '=' * 70)
+print('ACCURACY THEO TUNG TICKER')
+print('=' * 70)
+for res, res_xgb, res_dl in [(res_us, res_us_xgb, res_us_dl),
+                              (res_vn, res_vn_xgb, res_vn_dl)]:
+    best_k = max(res['metrics'], key=lambda k: res['metrics'][k]['accuracy'])
+    best_dl = max(res_dl['metrics'], key=lambda k: res_dl['metrics'][k]['accuracy'])
+    ta_df  = pd.DataFrame({
+        'Spark_best': res['ticker_acc'][best_k],
+        'XGBoost':    res_xgb['ticker_acc'],
+        f'DL_{best_dl}': res_dl['metrics'][best_dl]['ticker_acc'],
+    }).sort_values('Spark_best', ascending=False)
+    print(f'\n{res["market"]} (Spark best: {best_k} | DL best: {best_dl})')
+    print(ta_df.round(4).to_string())
 
-best_us_name, best_us_acc, best_us_auc, all_us_scores = find_best_model(res_us, res_us_xgb, res_us_dl)
-best_vn_name, best_vn_acc, best_vn_auc, all_vn_scores = find_best_model(res_vn, res_vn_xgb, res_vn_dl)
+colors = ['steelblue', 'coral']
+fig, axes = plt.subplots(1, 2, figsize=(18, 6))
+for ax, metric in zip(axes, ['Accuracy', 'AUC']):
+    sub = compare_df.pivot_table(index='Model', columns='Market', values=metric)
+    x   = np.arange(len(sub))
+    w   = 0.35
+    ax.bar(x - w/2, sub.get('US', pd.Series([0]*len(sub), index=sub.index)).values,
+           w, label='US', color='steelblue', alpha=0.85)
+    ax.bar(x + w/2, sub.get('VN', pd.Series([0]*len(sub), index=sub.index)).values,
+           w, label='VN', color='coral', alpha=0.85)
+    ax.axhline(0.5, color='red',   linestyle='--', alpha=0.5, linewidth=1, label='Random 50%')
+    ax.axhline(0.7, color='green', linestyle=':',  alpha=0.5, linewidth=1, label='Target 70%')
+    ax.set_xticks(x)
+    ax.set_xticklabels(sub.index, rotation=30, ha='right')
+    ax.set_title(f'{metric} — US vs VN', fontsize=13, fontweight='bold')
+    ax.set_ylabel(metric)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3, axis='y')
+    ax.set_ylim(0, 1.05)
 
-# ── In ket qua ────────────────────────────────────────────────────────────────
-print('=' * 80)
-print('MO HINH TOT NHAT — US vs VN  (Composite = 0.3*Acc + 0.4*AUC + 0.3*F1_macro)')
-print('=' * 80)
-for mkt, bname, scores_dict in [('US', best_us_name, all_us_scores),
-                                  ('VN', best_vn_name, all_vn_scores)]:
-    bs = scores_dict[bname]
-    print(f'\n  {mkt}: Best = {bname:<12} '
-          f'Acc={bs["accuracy"]:.4f}  AUC={bs["auc"]:.4f}  '
-          f'F1={bs["f1_macro"]:.4f}  Composite={bs["composite"]:.4f}')
-    ranked = sorted(scores_dict.items(), key=lambda x: x[1]['composite'], reverse=True)
-    for rank, (name, info) in enumerate(ranked, 1):
-        marker = '  <- BEST' if name == bname else ''
-        print(f'    {rank}. {name:<12} '
-              f'Acc={info["accuracy"]:.4f}  AUC={info["auc"]:.4f}  '
-              f'F1={info["f1_macro"]:.4f}  Comp={info["composite"]:.4f}{marker}')
-
-# ── Bar chart composite score ─────────────────────────────────────────────────
-models_order = sorted(set(all_us_scores.keys()) | set(all_vn_scores.keys()))
-us_comp = [all_us_scores.get(m, {}).get('composite', 0) for m in models_order]
-vn_comp = [all_vn_scores.get(m, {}).get('composite', 0) for m in models_order]
-us_auc  = [all_us_scores.get(m, {}).get('auc',       0) for m in models_order]
-vn_auc  = [all_vn_scores.get(m, {}).get('auc',       0) for m in models_order]
-us_f1   = [all_us_scores.get(m, {}).get('f1_macro',  0) for m in models_order]
-vn_f1   = [all_vn_scores.get(m, {}).get('f1_macro',  0) for m in models_order]
-
-fig, axes = plt.subplots(1, 3, figsize=(20, 5))
-fig.suptitle(
-    f'So sanh 8 mo hinh — Chon theo Composite Score\n'
-    f'US Best: {best_us_name}  |  VN Best: {best_vn_name}  (vien vang = best)',
-    fontsize=13, fontweight='bold'
-)
-x = np.arange(len(models_order)); w = 0.38
-titles  = ['Composite (0.3Acc+0.4AUC+0.3F1)', 'AUC-ROC', 'F1 Macro']
-us_data = [us_comp, us_auc, us_f1]
-vn_data = [vn_comp, vn_auc, vn_f1]
-
-for ax, title, uv, vv in zip(axes, titles, us_data, vn_data):
-    bu = ax.bar(x - w/2, uv, w, label='US', color='steelblue', alpha=0.85)
-    bv = ax.bar(x + w/2, vv, w, label='VN', color='coral',     alpha=0.85)
-    # Gold border on best
-    best_us_idx = models_order.index(best_us_name)
-    best_vn_idx = models_order.index(best_vn_name)
-    bu[best_us_idx].set_edgecolor('gold'); bu[best_us_idx].set_linewidth(3)
-    bv[best_vn_idx].set_edgecolor('gold'); bv[best_vn_idx].set_linewidth(3)
-    ax.axhline(0.5, color='red', linestyle='--', alpha=0.5, lw=1, label='Random 0.5')
-    ax.set_xticks(x); ax.set_xticklabels(models_order, rotation=30, ha='right', fontsize=9)
-    ax.set_title(title, fontsize=11, fontweight='bold')
-    ax.set_ylim(0, 0.85); ax.legend(fontsize=9); ax.grid(True, alpha=0.3, axis='y')
-    for bar in list(bu) + list(bv):
-        h = bar.get_height()
-        if h > 0.01:
-            ax.text(bar.get_x() + bar.get_width() / 2, h + 0.005, f'{h:.3f}',
-                    ha='center', va='bottom', fontsize=7, rotation=90)
-
+plt.suptitle('8 Models: US Stocks vs VN Stocks (Spark ML + XGBoost + LSTM + GRU)',
+             fontsize=14, fontweight='bold')
 plt.tight_layout()
 plt.show()
-print('ok Chon mo hinh tot nhat xong (Composite Score)!')
+print('ok Bieu do so sanh xong!')
+
 ```
 
-    ================================================================================
-    MO HINH TOT NHAT — US vs VN  (Composite = 0.3*Acc + 0.4*AUC + 0.3*F1_macro)
-    ================================================================================
+    ======================================================================
+    SO SANH 8 MODEL: US vs VN  (5 Spark + XGBoost + LSTM + GRU)
+    ======================================================================
+    Market        US      VN  Diff(US-VN)
+    Model                                
+    GBT       0.5273  0.5533      -0.0260
+    SVC       0.5211  0.5177       0.0034
+    Ensemble  0.5209  0.5510      -0.0301
+    RF        0.5192  0.5477      -0.0284
+    XGBoost   0.5185  0.5494      -0.0309
+    LR        0.5158  0.5276      -0.0118
+    LSTM      0.5147  0.5077       0.0070
+    GRU       0.5089  0.5162      -0.0073
     
-      US: Best = GBT          Acc=0.5263  AUC=0.5302  F1=0.5175  Composite=0.5252
-        1. GBT          Acc=0.5263  AUC=0.5302  F1=0.5175  Comp=0.5252  <- BEST
-        2. RF           Acc=0.5056  AUC=0.5133  F1=0.5041  Comp=0.5083
-        3. LR           Acc=0.5066  AUC=0.5088  F1=0.5058  Comp=0.5073
-        4. SVC          Acc=0.5269  AUC=0.5003  F1=0.3517  Comp=0.4637
-        5. Ensemble     Acc=0.5263  AUC=nan  F1=0.0000  Comp=nan
-        6. XGBoost      Acc=0.5169  AUC=0.5246  F1=0.5155  Comp=0.5195
-        7. GRU          Acc=0.5142  AUC=0.5209  F1=0.5140  Comp=0.5168
-        8. LSTM         Acc=0.5134  AUC=0.5185  F1=0.5118  Comp=0.5150
+    ======================================================================
+    ACCURACY THEO TUNG TICKER
+    ======================================================================
     
-      VN: Best = GRU          Acc=0.5639  AUC=0.5886  F1=0.5639  Composite=0.5738
-        1. Ensemble     Acc=0.5475  AUC=nan  F1=0.0000  Comp=nan
-        2. GRU          Acc=0.5639  AUC=0.5886  F1=0.5639  Comp=0.5738  <- BEST
-        3. XGBoost      Acc=0.5587  AUC=0.5814  F1=0.5552  Comp=0.5667
-        4. RF           Acc=0.5502  AUC=0.5845  F1=0.5501  Comp=0.5639
-        5. GBT          Acc=0.5523  AUC=0.5725  F1=0.5443  Comp=0.5580
-        6. LSTM         Acc=0.5367  AUC=0.5536  F1=0.5364  Comp=0.5434
-        7. LR           Acc=0.5336  AUC=0.5458  F1=0.5310  Comp=0.5377
-        8. SVC          Acc=0.5256  AUC=0.5427  F1=0.3589  Comp=0.4824
+    US (Spark best: GBT | DL best: LSTM)
+            Spark_best  XGBoost  DL_LSTM
+    ticker                              
+    MA          0.6109   0.5430   0.5047
+    BAC         0.5819   0.5485   0.5000
+    JPM         0.5688   0.5019   0.4904
+    UNH         0.5545   0.5513   0.5195
+    AMZN        0.5531   0.5310   0.5351
+    AAPL        0.5503   0.5786   0.5194
+    MSFT        0.5443   0.5316   0.5440
+    GS          0.5427   0.5183   0.5172
+    META        0.5395   0.5263   0.5079
+    NVDA        0.5383   0.5351   0.5565
+    WFC         0.5333   0.5182   0.5186
+    DIS         0.5312   0.5219   0.5096
+    AMD         0.5250   0.5040   0.5075
+    GOOGL       0.5185   0.5111   0.5340
+    F           0.5184   0.4924   0.5034
+    GM          0.5170   0.5261   0.5233
+    COST        0.5168   0.5630   0.4781
+    NFLX        0.5163   0.5206   0.5033
+    INTC        0.5137   0.5118   0.5037
+    CVX         0.5106   0.5248   0.5418
+    BA          0.5094   0.4859   0.4867
+    XOM         0.5061   0.4939   0.5094
+    WMT         0.5056   0.5000   0.4798
+    TSLA        0.4992   0.4977   0.4892
+    LLY         0.4973   0.4810   0.4890
+    V           0.4947   0.5368   0.5707
+    VZ          0.4689   0.5024   0.5805
+    
+    VN (Spark best: GBT | DL best: GRU)
+            Spark_best  XGBoost  DL_GRU
+    ticker                             
+    ACB         0.6018   0.5249  0.5116
+    PNJ         0.5957   0.5812  0.5147
+    MBB         0.5940   0.5705  0.5225
+    GAS         0.5890   0.5548  0.5390
+    BID         0.5888   0.5545  0.5288
+    DHG         0.5858   0.6095  0.5283
+    TCB         0.5826   0.5607  0.5000
+    BVH         0.5756   0.5788  0.5197
+    MWG         0.5743   0.6121  0.4604
+    VJC         0.5730   0.5730  0.5513
+    VHM         0.5695   0.5348  0.4714
+    GMD         0.5661   0.5688  0.5699
+    NKG         0.5657   0.5040  0.5193
+    REE         0.5619   0.5786  0.5533
+    STB         0.5584   0.5635  0.5471
+    VCB         0.5565   0.5696  0.5249
+    FPT         0.5496   0.5461  0.5162
+    SAB         0.5472   0.5551  0.4940
+    POW         0.5469   0.5308  0.5531
+    HDB         0.5463   0.5679  0.5110
+    HPG         0.5455   0.5486  0.4951
+    VNM         0.5451   0.5021  0.5463
+    VIC         0.5429   0.5521  0.5141
+    KDH         0.5404   0.5515  0.5014
+    SSI         0.5390   0.5485  0.5024
+    HSG         0.5311   0.5166  0.5203
+    MSN         0.5285   0.5415  0.4667
+    BCM         0.5265   0.5265  0.5337
+    PLX         0.5258   0.5532  0.5108
+    VPB         0.5229   0.5429  0.5513
+    CTG         0.5213   0.5457  0.5031
+    VRE         0.5210   0.4930  0.4879
+    NLG         0.5209   0.5460  0.5076
     
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_29_1.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_30_1.png)
     
 
 
-    ok Chon mo hinh tot nhat xong (Composite Score)!
+    ok Bieu do so sanh xong!
     
 
-## PHẦN 10B: WALK-FORWARD VALIDATION — KIỂM ĐỊNH ĐỘ ỔN ĐỊNH QUA TỪNG NĂM
+## PHẦN 10B: ĐÁNH GIÁ CHI TIẾT MÔ HÌNH
 
-Sau khi chọn mô hình tốt nhất cho mỗi thị trường, kiểm tra **độ ổn định** qua từng năm:
+Accuracy đơn lẻ không đủ cho bài toán phân loại. Phần này bổ sung:
+- **Confusion Matrix**: model sai kiểu gì (nhầm UP thành DOWN hay ngược lại)
+- **Precision / Recall / F1-score**: đánh giá cân bằng giữa 2 lớp
+- **ROC Curve**: trực quan khả năng phân biệt của model
+- **Feature Importance**: features nào đóng góp nhiều nhất
 
-| | Mô tả |
-|---|---|
-| **Mô hình** | Sử dụng mô hình tốt nhất riêng cho **US** và **VN** |
-| **Số fold** | 6 fold: 2019, 2020, 2021, 2022, 2023, 2024 |
-| **Mục đích** | Phát hiện mô hình chỉ tốt ở một giai đoạn hay ổn định qua nhiều năm |
-
-### Chiến lược theo loại mô hình:
-
-| Loại | Phương pháp | Lý do |
-|------|-------------|-------|
-| **LR / RF / GBT / SVC / XGBoost** | Expanding window — retrain mỗi fold | Nhanh, đúng nguyên tắc walk-forward |
-| **LSTM / GRU** | Year-by-year evaluation trên model đã train | Re-train 6 lần tốn ~30 phút & mini model khác kiến trúc → không đại diện. Dùng model gốc đánh giá từng năm vẫn phản ánh độ ổn định |
-| **Ensemble** | XGBoost proxy | Quá phức tạp để retrain |
-
+Dùng **XGBoost** (model có predict_proba) cho Confusion Matrix & ROC; **Random Forest** cho Feature Importance.
 
 
 ```python
-# ── WALK-FORWARD VALIDATION ─────────────────────────────────────────────────
-from xgboost import XGBClassifier
-from sklearn.preprocessing import StandardScaler as SS
-from sklearn.metrics import accuracy_score, roc_auc_score
-from sklearn.linear_model import LogisticRegression as SklearnLR
-from sklearn.ensemble import RandomForestClassifier as SklearnRF, GradientBoostingClassifier as SklearnGBT
-from sklearn.svm import LinearSVC
-from sklearn.calibration import CalibratedClassifierCV
-import pandas as pd
-import numpy as np
+from sklearn.metrics import (confusion_matrix, classification_report,
+                             precision_score, recall_score, f1_score,
+                             roc_curve, auc as sk_auc)
 import matplotlib.pyplot as plt
+import numpy as np
 
-def get_wf_model(model_type):
-    """Tra ve sklearn model tuong ung cho walk-forward validation."""
-    if model_type == 'RF':
-        return SklearnRF(n_estimators=200, max_depth=10, random_state=42, n_jobs=-1)
-    elif model_type == 'GBT':
-        return SklearnGBT(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42)
-    elif model_type == 'LR':
-        return SklearnLR(C=1.0, max_iter=1000, random_state=42)
-    elif model_type == 'SVC':
-        return CalibratedClassifierCV(LinearSVC(max_iter=2000, random_state=42))
-    else:  # XGBoost hoac Ensemble proxy
-        return XGBClassifier(n_estimators=200, max_depth=4, learning_rate=0.05,
-                             subsample=0.8, colsample_bytree=0.8,
-                             random_state=42, n_jobs=-1, verbosity=0)
+fig, axes = plt.subplots(2, 3, figsize=(20, 12))
 
+for row, (res, res_xgb, mkt) in enumerate([(res_us, res_us_xgb, 'US'),
+                                            (res_vn, res_vn_xgb, 'VN')]):
+    y_true = np.asarray(res_xgb['y_ts']).astype(int)
+    y_pred = np.asarray(res_xgb['y_pred']).astype(int)
+    X_ts   = res_xgb['scaler'].transform(
+                res_xgb['df_ts'][res_xgb['features']].values.astype(np.float64))
+    y_prob = res_xgb['model'].predict_proba(X_ts)[:, 1]
 
-def dl_year_eval(res_dl, df_spark, market_name, feature_cols, model_name,
-                 test_years=(2022, 2023, 2024)):
-    """Year-by-year evaluation cho LSTM/GRU su dung model da train san.
-    Khong retrain — dung model goc de danh gia tung nam trong test set.
-    Chi ap dung cho nam nam >= 2022 (test period, khong leak).
-    """
-    dl_met  = res_dl['metrics'].get(model_name)
-    if dl_met is None or 'model' not in dl_met:
-        print(f'  [{model_name}] Model chua co san (re-run DL pipeline). Tra ve [].')
-        return []
+    # ── (1) Confusion Matrix ──
+    cm = confusion_matrix(y_true, y_pred)
+    ax = axes[row, 0]
+    ax.imshow(cm, cmap='Blues')
+    for (ii, jj), v in np.ndenumerate(cm):
+        ax.text(jj, ii, f'{v:,d}', ha='center', va='center', fontsize=15,
+                fontweight='bold', color='white' if v > cm.max()/2 else 'black')
+    ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
+    ax.set_xticklabels(['DOWN (0)', 'UP (1)']); ax.set_yticklabels(['DOWN (0)', 'UP (1)'])
+    ax.set_xlabel('Predicted'); ax.set_ylabel('Actual')
+    ax.set_title(f'{mkt} — Confusion Matrix (XGBoost)', fontweight='bold', fontsize=12)
 
-    model   = dl_met['model']
-    scaler  = res_dl['scaler']
-    feat    = res_dl['features']
-    seq_len = res_dl['seq_len']
+    # ── (2) ROC Curve ──
+    fpr, tpr, _ = roc_curve(y_true, y_prob)
+    roc_auc = sk_auc(fpr, tpr)
+    ax = axes[row, 1]
+    ax.plot(fpr, tpr, color='darkorange', lw=2.5, label=f'ROC (AUC = {roc_auc:.3f})')
+    ax.plot([0, 1], [0, 1], 'k--', lw=1, label='Random (AUC = 0.5)')
+    ax.fill_between(fpr, tpr, alpha=0.15, color='darkorange')
+    ax.set_xlim([0, 1]); ax.set_ylim([0, 1.02])
+    ax.set_xlabel('False Positive Rate'); ax.set_ylabel('True Positive Rate')
+    ax.set_title(f'{mkt} — ROC Curve', fontweight='bold', fontsize=12)
+    ax.legend(loc='lower right')
+    ax.grid(True, alpha=0.3)
 
-    XGB_BASE = [c for c in feature_cols if c not in
-                ('ticker_idx', 'macd_hist', 'log_volume', 'log_lag1_volume')]
-    needed = list(set(['time', 'ticker', 'close', 'volume', 'lag1_volume',
-                       'label', 'year'] + feat))
-    avail  = [c for c in needed if c in df_spark.columns]
-    df_pd  = df_spark.select(*avail).toPandas()
-    df_pd['time'] = pd.to_datetime(df_pd['time'])
-    df_pd = df_pd.sort_values(['ticker', 'time']).reset_index(drop=True)
+    # ── (3) Feature Importance (top 12, Random Forest) ──
+    fi = res['feature_importance'][:12]
+    names  = [f[0] for f in fi][::-1]
+    scores = [float(f[1]) for f in fi][::-1]
+    ax = axes[row, 2]
+    ax.barh(names, scores, color='steelblue', alpha=0.85)
+    ax.set_title(f'{mkt} — Top 12 Feature Importance (RF)', fontweight='bold', fontsize=12)
+    ax.set_xlabel('Importance')
+    ax.tick_params(axis='y', labelsize=9)
 
-    # Recompute MACD & log_volume
-    ema12 = df_pd.groupby('ticker')['close'].transform(lambda s: s.ewm(span=12, adjust=False).mean())
-    ema26 = df_pd.groupby('ticker')['close'].transform(lambda s: s.ewm(span=26, adjust=False).mean())
-    macd_r = ema12 - ema26
-    df_pd['_macd_r'] = macd_r
-    macd_sig = df_pd.groupby('ticker')['_macd_r'].transform(lambda s: s.ewm(span=9, adjust=False).mean())
-    df_pd.drop(columns=['_macd_r'], inplace=True)
-    cs = df_pd['close'].where(df_pd['close'] != 0, np.nan)
-    df_pd['macd_real']       = (macd_r / cs).fillna(0)
-    df_pd['macd_hist_real']  = ((macd_r - macd_sig) / cs).fillna(0)
-    df_pd['log_volume']      = np.log1p(df_pd['volume'].clip(lower=0))
-    df_pd['log_lag1_volume'] = np.log1p(df_pd['lag1_volume'].clip(lower=0))
+    # ── In classification report ──
+    print('=' * 64)
+    print(f'{mkt} — XGBoost Classification Report (test set)')
+    print('=' * 64)
+    print(classification_report(y_true, y_pred, target_names=['DOWN','UP'], digits=4))
+    print(f'  Precision (UP): {precision_score(y_true, y_pred):.4f}')
+    print(f'  Recall    (UP): {recall_score(y_true, y_pred):.4f}')
+    print(f'  F1-score  (UP): {f1_score(y_true, y_pred):.4f}')
+    print()
 
-    # Fill missing features
-    for f in feat:
-        if f not in df_pd.columns:
-            df_pd[f] = 0.0
-    df_pd = df_pd.dropna(subset=feat + ['label']).reset_index(drop=True)
+plt.suptitle('Danh gia chi tiet: Confusion Matrix | ROC | Feature Importance',
+             fontsize=15, fontweight='bold', y=1.01)
+plt.tight_layout()
+plt.show()
+print('ok Danh gia chi tiet xong!')
 
-    sep = '=' * 65
-    print(f'\n{sep}')
-    print(f'YEAR-BY-YEAR EVALUATION — {market_name} | Model: {model_name} (model da train, khong retrain)')
-    print(f'{sep}')
-    print(f'  {"Year":>4s}  {"N_sequences":>12s}  {"Accuracy":>9s}  {"AUC":>7s}')
-    print('-' * 65)
-
-    fold_results = []
-    for test_yr in test_years:
-        X_seqs, y_list = [], []
-        for ticker, grp in df_pd.sort_values('time').groupby('ticker'):
-            grp = grp.reset_index(drop=True)
-            tk_feat = np.nan_to_num(grp[feat].values.astype(np.float64), nan=0.0)
-            try:
-                tk_scaled = scaler.transform(tk_feat)
-            except Exception:
-                continue
-            labels = grp['label'].values.astype(int)
-            years  = grp['year'].values
-            for i in range(seq_len, len(grp)):
-                if years[i] == test_yr:
-                    X_seqs.append(tk_scaled[i - seq_len:i])
-                    y_list.append(labels[i])
-
-        if len(X_seqs) < 10:
-            continue
-
-        X_arr  = np.array(X_seqs, dtype=np.float32)
-        y_arr  = np.array(y_list, dtype=int)
-        y_prob = model.predict(X_arr, verbose=0).flatten()
-        y_pred = (y_prob > 0.5).astype(int)
-        acc    = accuracy_score(y_arr, y_pred)
-        try:
-            auc = roc_auc_score(y_arr, y_prob)
-        except Exception:
-            auc = 0.5
-
-        fold_results.append({'fold': str(test_yr), 'train_end': 2021,
-                             'test_year': test_yr, 'accuracy': acc,
-                             'auc': auc, 'n_test': len(y_arr)})
-        print(f'  {test_yr:>4d}  {len(X_arr):>12,d}       {acc:.4f}   {auc:.4f}')
-
-    if fold_results:
-        accs = [r['accuracy'] for r in fold_results]
-        aucs = [r['auc']      for r in fold_results]
-        print('-' * 65)
-        print(f'  {"MEAN":>4s}  {"":>12s}       {np.mean(accs):.4f}   {np.mean(aucs):.4f}')
-        print(f'  {"STD":>4s}  {"":>12s}       {np.std(accs):.4f}   {np.std(aucs):.4f}')
-    return fold_results
-
-
-def walk_forward_validation(df_spark, market_name, feature_cols, folds=None,
-                             model_type='XGBoost'):
-    """Walk-forward validation: expanding window, retrain moi fold.
-    Chi danh cho sklearn / XGBoost / Ensemble (proxy).
-    LSTM/GRU su dung dl_year_eval() rieng.
-    """
-    if folds is None:
-        folds = [
-            (2018, 2019), (2019, 2020), (2020, 2021),
-            (2021, 2022), (2022, 2023), (2023, 2024),
-        ]
-
-    XGB_BASE = [c for c in feature_cols if c not in
-                ('ticker_idx', 'macd_hist', 'log_volume', 'log_lag1_volume')]
-    needed = list(set(['time', 'ticker', 'close', 'volume', 'lag1_volume',
-                       'label', 'year', 'next_close'] + XGB_BASE))
-    avail  = [c for c in needed if c in df_spark.columns]
-    df_pd  = df_spark.select(*avail).toPandas()
-    df_pd['time'] = pd.to_datetime(df_pd['time'])
-    df_pd = df_pd.sort_values(['ticker', 'time']).reset_index(drop=True)
-
-    ema12 = df_pd.groupby('ticker')['close'].transform(lambda s: s.ewm(span=12, adjust=False).mean())
-    ema26 = df_pd.groupby('ticker')['close'].transform(lambda s: s.ewm(span=26, adjust=False).mean())
-    macd_r = ema12 - ema26
-    df_pd['_macd_r'] = macd_r
-    macd_sig = df_pd.groupby('ticker')['_macd_r'].transform(lambda s: s.ewm(span=9, adjust=False).mean())
-    df_pd.drop(columns=['_macd_r'], inplace=True)
-    cs = df_pd['close'].where(df_pd['close'] != 0, np.nan)
-    df_pd['macd_real']      = (macd_r / cs).fillna(0)
-    df_pd['macd_hist_real'] = ((macd_r - macd_sig) / cs).fillna(0)
-    df_pd['log_volume']      = np.log1p(df_pd['volume'].clip(lower=0))
-    df_pd['log_lag1_volume'] = np.log1p(df_pd['lag1_volume'].clip(lower=0))
-
-    feat = [c for c in XGB_BASE if c in df_pd.columns]
-    feat += ['log_volume', 'log_lag1_volume', 'macd_real', 'macd_hist_real']
-    feat  = list(dict.fromkeys([c for c in feat if c in df_pd.columns]))
-    df_pd = df_pd.dropna(subset=feat + ['label']).reset_index(drop=True)
-
-    proxy_note = ' (XGBoost proxy)' if model_type == 'Ensemble' else ''
-    sep = '=' * 65
-    print(f'\n{sep}\nWALK-FORWARD VALIDATION — {market_name} | Model: {model_type}{proxy_note} ({len(feat)} features)\n{sep}')
-    if model_type == 'Ensemble':
-        print('  [WF Note] Ensemble: dung XGBoost lam proxy (retrain moi fold)')
-    print(f'  {"Fold":>4s}  {"Train window":>22s}  {"Test year":>9s}  '
-          f'{"Accuracy":>9s}  {"AUC":>7s}  {"N_test":>7s}')
-    print('-' * 65)
-
-    eff_type = 'XGBoost' if model_type == 'Ensemble' else model_type
-    fold_results = []
-    for train_end_yr, test_yr in folds:
-        df_tr = df_pd[df_pd['year'] <= train_end_yr]
-        df_ts = df_pd[df_pd['year'] == test_yr]
-        if len(df_tr) < 100 or len(df_ts) < 10:
-            continue
-        sc   = SS()
-        X_tr = sc.fit_transform(df_tr[feat].values.astype(np.float64))
-        y_tr = df_tr['label'].values.astype(int)
-        X_ts = sc.transform(df_ts[feat].values.astype(np.float64))
-        y_ts = df_ts['label'].values.astype(int)
-        mdl  = get_wf_model(eff_type)
-        mdl.fit(X_tr, y_tr)
-        y_prob = mdl.predict_proba(X_ts)[:, 1]
-        y_pred = (y_prob > 0.5).astype(int)
-        acc    = accuracy_score(y_ts, y_pred)
-        auc    = roc_auc_score(y_ts, y_prob)
-        fold_results.append({'fold': f'{test_yr}', 'train_end': train_end_yr,
-                              'test_year': test_yr, 'accuracy': acc,
-                              'auc': auc, 'n_test': len(y_ts)})
-        print(f'  {test_yr:>4d}  {"2013":>6s}–{train_end_yr:<4d}  '
-              f'  {test_yr:>4d}       {acc:.4f}   {auc:.4f}  {len(y_ts):>7d}')
-
-    if fold_results:
-        accs = [r['accuracy'] for r in fold_results]
-        aucs = [r['auc']      for r in fold_results]
-        print('-' * 65)
-        print(f'  {"MEAN":>4s}  {"":>22s}  {"":>9s}  {np.mean(accs):.4f}   {np.mean(aucs):.4f}')
-        print(f'  {"STD":>4s}  {"":>22s}  {"":>9s}  {np.std(accs):.4f}   {np.std(aucs):.4f}')
-    return fold_results
-
-
-# ── Chay validation cho US va VN ─────────────────────────────────────────────
-def _run_validation(best_name, res_dl, df_spark, market_name, feat_cols):
-    """Chon phuong phap phu hop theo loai model."""
-    if best_name in ('LSTM', 'GRU'):
-        return dl_year_eval(res_dl, df_spark, market_name, feat_cols, best_name)
-    else:
-        return walk_forward_validation(df_spark, market_name, feat_cols,
-                                       model_type=best_name)
-
-wf_us = _run_validation(best_us_name, res_us_dl, df_us, 'US', FEATURE_COLS_US)
-wf_vn = _run_validation(best_vn_name, res_vn_dl, df_vn, 'VN', FEATURE_COLS_VN)
 ```
 
+    ================================================================
+    US — XGBoost Classification Report (test set)
+    ================================================================
+                  precision    recall  f1-score   support
     
-    =================================================================
-    WALK-FORWARD VALIDATION — US | Model: GBT (55 features)
-    =================================================================
-      Fold            Train window  Test year   Accuracy      AUC   N_test
-    -----------------------------------------------------------------
-      2019    2013–2018    2019       0.5279   0.4649     2781
-      2020    2013–2019    2020       0.5159   0.5136     4154
-      2021    2013–2020    2021       0.5125   0.5097     3368
-      2022    2013–2021    2022       0.4908   0.5010     4199
-      2023    2013–2022    2023       0.5208   0.5169     3218
-      2024    2013–2023    2024       0.5378   0.5162     3072
-    -----------------------------------------------------------------
-      MEAN                                     0.5176   0.5037
-       STD                                     0.0145   0.0182
+            DOWN     0.4990    0.4289    0.4613      4838
+              UP     0.5322    0.6015    0.5648      5227
     
-    =================================================================
-    YEAR-BY-YEAR EVALUATION — VN | Model: GRU (model da train, khong retrain)
-    =================================================================
-      Year   N_sequences   Accuracy      AUC
-    -----------------------------------------------------------------
-      2022         2,731       0.4892   0.4889
-      2023         1,636       0.4908   0.4927
-      2024         1,128       0.5009   0.4834
-    -----------------------------------------------------------------
-      MEAN                     0.4936   0.4884
-       STD                     0.0052   0.0038
+        accuracy                         0.5185     10065
+       macro avg     0.5156    0.5152    0.5130     10065
+    weighted avg     0.5163    0.5185    0.5150     10065
     
+      Precision (UP): 0.5322
+      Recall    (UP): 0.6015
+      F1-score  (UP): 0.5648
+    
+    ================================================================
+    VN — XGBoost Classification Report (test set)
+    ================================================================
+                  precision    recall  f1-score   support
+    
+            DOWN     0.5378    0.4845    0.5097      5350
+              UP     0.5584    0.6101    0.5831      5715
+    
+        accuracy                         0.5494     11065
+       macro avg     0.5481    0.5473    0.5464     11065
+    weighted avg     0.5484    0.5494    0.5476     11065
+    
+      Precision (UP): 0.5584
+      Recall    (UP): 0.6101
+      F1-score  (UP): 0.5831
+    
+    
+
+
+    
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_ 32_1.png)
+    
+
+
+    ok Danh gia chi tiet xong!
+    
+
+## PHẦN 11: BACKTEST CHIẾN LƯỢC GIAO DỊCH — US vs VN
+
+Dung **Random Forest predictions** tren tap test de mo phong giao dich:
+- Neu RF du bao `UP` (prediction=1) → mua ngay hom do.
+- So sanh `Strategy Return` vs `Buy & Hold`.
 
 
 ```python
-# ── Ve bieu do kiem dinh do on dinh qua tung nam ────────────────────────
-import matplotlib.pyplot as plt
-import numpy as np
+def run_backtest(spark_predictions, market_name):
+    fwd_col = 'next_close'  # ca 2 thi truong dung next-day label
+    pred_pd = (spark_predictions
+               .select('time','ticker','close', fwd_col,'label','prediction')
+               .toPandas())
+    pred_pd = pred_pd.rename(columns={fwd_col: '_next_close'})
+    pred_pd['time'] = pd.to_datetime(pred_pd['time'])
+    pred_pd = pred_pd.sort_values(['ticker','time'])
+    pred_pd['actual_ret']   = (pred_pd['_next_close'] - pred_pd['close']) / pred_pd['close']
+    pred_pd['strategy_ret'] = pred_pd.apply(
+        lambda r: r['actual_ret'] if r['prediction'] == 1 else 0, axis=1)
 
-fig, axes = plt.subplots(1, 2, figsize=(16, 5))
+    rows = []
+    for ticker in sorted(pred_pd['ticker'].unique()):
+        t    = pred_pd[pred_pd['ticker'] == ticker]
+        n_tr = (t['prediction'] == 1).sum()
+        wr   = t[(t['prediction']==1) & (t['label']==1)].shape[0] / max(n_tr,1) * 100
+        strat = t['strategy_ret'].sum() * 100
+        bnh   = t['actual_ret'].sum() * 100
+        rows.append({'Ticker': ticker, 'Strategy%': strat, 'B&H%': bnh,
+                     'Outperform%': strat-bnh, 'WinRate%': wr, 'Trades': int(n_tr)})
 
-def _wf_label(name):
-    return f'{name} (year-by-year eval)' if name in ('LSTM', 'GRU') else f'{name} (walk-forward)'
+    df_bt = pd.DataFrame(rows).sort_values('Outperform%', ascending=False)
+    print(f'\n{market_name} — Random Forest Backtest:')
+    print(df_bt.to_string(index=False, float_format=lambda x: f'{x:.2f}'))
+    print(f'  TOTAL  Strategy: {df_bt["Strategy%"].sum():.2f}%'
+          f'  B&H: {df_bt["B&H%"].sum():.2f}%'
+          f'  Outperform: {df_bt["Outperform%"].sum():.2f}%')
+    return df_bt
 
-fig.suptitle(f'Kiem dinh do on dinh qua tung nam\n'
-             f'US: {_wf_label(best_us_name)}  |  VN: {_wf_label(best_vn_name)}',
-             fontsize=13, fontweight='bold')
+print('=' * 70)
+print('BACKTEST — US STOCKS (Random Forest)')
+print('=' * 70)
+bt_us = run_backtest(res_us['predictions']['RF'], 'US')
 
-wf_model_map = {'US': best_us_name, 'VN': best_vn_name}
-for ax, wf_res, mkt, color in [
-    (axes[0], wf_us, 'US', '#2563EB'),
-    (axes[1], wf_vn, 'VN', '#16A34A'),
-]:
-    mdl_lbl = wf_model_map[mkt]
-    method_lbl = 'Year-by-year eval' if mdl_lbl in ('LSTM', 'GRU') else 'Walk-Forward'
-    if not wf_res:
-        ax.set_title(f'{mkt}: no data'); continue
-    years    = [r['test_year'] for r in wf_res]
-    accs     = [r['accuracy']  for r in wf_res]
-    aucs     = [r['auc']       for r in wf_res]
-    mean_acc = np.mean(accs)
+print('\n' + '=' * 70)
+print('BACKTEST — VN STOCKS (Random Forest)')
+print('=' * 70)
+bt_vn = run_backtest(res_vn['predictions']['RF'], 'VN')
 
-    ax.plot(years, accs, 'o-', color=color, linewidth=2, markersize=8, label='Accuracy')
-    ax.plot(years, aucs, 's--', color=color, linewidth=1.5, markersize=6, alpha=0.7, label='AUC-ROC')
-    ax.axhline(0.5, color='gray', linestyle=':', linewidth=1.5, label='Random (0.50)')
-    ax.axhline(mean_acc, color=color, linestyle='--', linewidth=1, alpha=0.5,
-               label=f'Mean acc={mean_acc:.3f}')
-    ax.fill_between(years, 0.5, accs, alpha=0.1, color=color)
-    for yr, ac in zip(years, accs):
-        ax.annotate(f'{ac:.3f}', (yr, ac), textcoords='offset points',
-                    xytext=(0, 10), ha='center', fontsize=9)
-
-    ax.set_title(f'{mkt} Stocks — {method_lbl} ({mdl_lbl})', fontsize=11, fontweight='bold')
-    ax.set_xlabel('Test Year'); ax.set_ylabel('Score')
-    ax.set_ylim(0.42, 0.76); ax.legend(fontsize=9); ax.grid(True, alpha=0.3)
-
-plt.tight_layout()
-plt.show()
-print('\nNhan xet: Accuracy khac nhau theo tung nam phan anh dung thuc te thi truong.')
 ```
 
-
+    ======================================================================
+    BACKTEST — US STOCKS (Random Forest)
+    ======================================================================
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_32_0.png)
+    US — Random Forest Backtest:
+    Ticker  Strategy%   B&H%  Outperform%  WinRate%  Trades
+       UNH      25.17 -50.22        75.38     57.83     166
+      META     186.20 116.77        69.43     58.68     288
+        MA      55.62   5.78        49.84     58.40     125
+      MSFT      55.94  12.18        43.75     55.56     207
+         V      37.38   3.09        34.30     56.00     100
+     GOOGL     100.63  74.20        26.43     55.85     265
+      AMZN      86.71  60.50        26.21     54.74     285
+       DIS      -2.88 -25.20        22.33     48.48     198
+      AAPL      49.54  28.19        21.35     54.78     230
+        VZ       2.48  -8.89        11.37     46.79     109
+       JPM      36.82  25.73        11.10     55.35     159
+        GS      57.92  49.21         8.71     55.74     183
+       BAC      45.02  41.81         3.22     54.64     194
+       CVX       1.14   4.40        -3.26     52.86     140
+       WMT      23.03  26.43        -3.40     52.58      97
+      COST      25.61  30.46        -4.84     57.03     128
+      NVDA     196.06 205.24        -9.18     55.50     436
+        BA      -4.22   5.34        -9.56     52.08     240
+      INTC      26.52  42.86       -16.34     49.01     353
+        GM     -19.69  -3.07       -16.62     47.79     272
+       WFC      51.91  72.51       -20.60     56.92     195
+      NFLX      33.88  55.93       -22.06     49.06     318
+         F     -53.09 -30.24       -22.85     48.99     296
+      TSLA      50.45  81.88       -31.43     50.86     407
+       LLY      73.08 112.43       -39.34     56.00     200
+       XOM      26.14  71.04       -44.90     53.07     179
+       AMD      47.74 105.22       -57.49     50.71     424
+      TOTAL  Strategy: 1215.12%  B&H: 1113.59%  Outperform: 101.53%
     
-
-
+    ======================================================================
+    BACKTEST — VN STOCKS (Random Forest)
+    ======================================================================
     
-    Nhan xet: Accuracy khac nhau theo tung nam phan anh dung thuc te thi truong.
+    VN — Random Forest Backtest:
+    Ticker  Strategy%   B&H%  Outperform%  WinRate%  Trades
+       VRE     132.78   5.64       127.14     55.88     204
+       VHM     191.10  66.15       124.95     64.12     170
+       MWG     124.11   1.27       122.84     59.69     191
+       NLG      62.10 -47.70       109.80     52.00     225
+       TCB     133.57  34.10        99.47     62.73     161
+       HDB     107.21  13.42        93.79     59.77     174
+       KDH      47.81 -38.93        86.75     50.31     163
+       MSN      43.23 -35.26        78.50     55.26     190
+       HPG     101.55  35.15        66.39     56.02     166
+       STB     108.68  46.49        62.19     56.54     214
+       NKG      53.75  -7.60        61.35     53.50     243
+       FPT     103.00  42.51        60.49     58.33     144
+       BID     166.41 110.35        56.06     65.61     157
+       MBB     111.86  60.82        51.04     60.98     164
+       PNJ     136.56  86.18        50.39     64.12     131
+       CTG      74.76  25.94        48.82     57.22     180
+       SAB      34.18 -13.48        47.66     52.63     114
+       HSG      24.78 -19.46        44.24     51.63     246
+       PLX      72.71  31.15        41.56     52.94     153
+       POW      54.79  28.11        26.68     53.30     182
+       VCB      83.07  57.43        25.63     58.91     129
+       DHG      75.65  51.51        24.14     56.25      80
+       SSI      48.13  28.97        19.16     54.84     217
+       REE     117.45  98.47        18.98     60.71     140
+       GMD     109.47  93.94        15.53     57.06     177
+       VJC      89.70  74.38        15.32     52.07     121
+       BVH      82.39  68.20        14.18     57.69     130
+       ACB      56.72  49.86         6.86     58.33     120
+       VIC     174.07 167.47         6.60     56.25     176
+       VPB      47.87  41.39         6.48     54.44     180
+       VNM      54.57  57.43        -2.85     54.17     120
+       BCM      51.92  93.16       -41.24     51.80     139
+       GAS      44.79  96.95       -52.16     55.48     155
+      TOTAL  Strategy: 2920.74%  B&H: 1404.00%  Outperform: 1516.74%
     
 
 
@@ -2357,20 +2163,23 @@ print('BAO CAO TONG HOP — US vs VN STOCK ANALYSIS')
 print('=' * 70)
 
 groups = [
-    (res_us, res_us_xgb, res_us_dl, bt_us, best_us_name, best_us_acc),
-    (res_vn, res_vn_xgb, res_vn_dl, bt_vn, best_vn_name, best_vn_acc),
+    (res_us, res_us_xgb, res_us_dl, bt_us),
+    (res_vn, res_vn_xgb, res_vn_dl, bt_vn),
 ]
-for res, res_xgb, res_dl, bt, winner, win_acc in groups:
-    m       = res['market']
-    best_k  = max(res['metrics'], key=lambda k: res['metrics'][k]['accuracy'])
-    best_acc= res['metrics'][best_k]['accuracy']
-    best_auc= res['metrics'][best_k]['auc']
-    xgb_acc = res_xgb['accuracy']
-    xgb_auc = res_xgb['auc']
-    best_dl = max(res_dl['metrics'], key=lambda k: res_dl['metrics'][k]['accuracy'])
-    dl_acc  = res_dl['metrics'][best_dl]['accuracy']
-    dl_auc  = res_dl['metrics'][best_dl]['auc']
+for res, res_xgb, res_dl, bt in groups:
+    m        = res['market']
+    best_k   = max(res['metrics'], key=lambda k: res['metrics'][k]['accuracy'])
+    best_acc = res['metrics'][best_k]['accuracy']
+    best_auc = res['metrics'][best_k]['auc']
+    xgb_acc  = res_xgb['accuracy']
+    xgb_auc  = res_xgb['auc']
+    best_dl  = max(res_dl['metrics'], key=lambda k: res_dl['metrics'][k]['accuracy'])
+    dl_acc   = res_dl['metrics'][best_dl]['accuracy']
+    dl_auc   = res_dl['metrics'][best_dl]['auc']
 
+    all_scores = {best_k: best_acc, 'XGBoost': xgb_acc, best_dl: dl_acc}
+    winner    = max(all_scores, key=all_scores.get)
+    win_acc   = all_scores[winner]
     print(f'\n  {m} STOCKS  ({res["n_train"]:,d} train | {res["n_test"]:,d} test)')
     print(f'  Best Spark   : {best_k:<10}  Acc={best_acc:.4f}  AUC={best_auc:.4f}')
     print(f'  XGBoost      :             Acc={xgb_acc:.4f}  AUC={xgb_auc:.4f}')
@@ -2389,208 +2198,220 @@ print('=' * 70)
     BAO CAO TONG HOP — US vs VN STOCK ANALYSIS
     ======================================================================
     
-      US STOCKS  (26,509 train | 14,481 test)
-      Best Spark   : SVC         Acc=0.5269  AUC=0.5003
-      XGBoost      :             Acc=0.5169  AUC=0.5246
-      Best DL      : GRU         Acc=0.5142  AUC=0.5209
-      -> Winner    : GBT         Acc=0.5263
-      Backtest     : Strategy 2018.0%  vs  B&H 1533.2%
+      US STOCKS  (16,978 train | 10,065 test)
+      Best Spark   : GBT         Acc=0.5273  AUC=0.5289
+      XGBoost      :             Acc=0.5185  AUC=0.5285
+      Best DL      : LSTM        Acc=0.5147  AUC=0.5167
+      -> Winner    : GBT         Acc=0.5273
+      Backtest     : Strategy 1215.1%  vs  B&H 1113.6%
     
-      VN STOCKS  (13,201 train | 7,768 test)
-      Best Spark   : GBT         Acc=0.5523  AUC=0.5725
-      XGBoost      :             Acc=0.5587  AUC=0.5814
-      Best DL      : GRU         Acc=0.5639  AUC=0.5886
-      -> Winner    : GRU         Acc=0.5639
-      Backtest     : Strategy 2665.0%  vs  B&H 1421.5%
+      VN STOCKS  (18,879 train | 11,065 test)
+      Best Spark   : GBT         Acc=0.5533  AUC=0.5702
+      XGBoost      :             Acc=0.5494  AUC=0.5633
+      Best DL      : GRU         Acc=0.5162  AUC=0.5216
+      -> Winner    : GBT         Acc=0.5533
+      Backtest     : Strategy 2920.7%  vs  B&H 1404.0%
     
     ======================================================================
     HOAN THANH
     ======================================================================
     
 
-## PHẦN 11B: ĐÁNH GIÁ CHI TIẾT MÔ HÌNH TỐT NHẤT
+## PHẦN 11B: WALK-FORWARD VALIDATION
 
-Sau khi chọn mô hình tốt nhất từng thị trường, đánh giá chi tiết bằng:
-- **Confusion Matrix**: model nhầm loại nào (UP→DOWN hay DOWN→UP)
-- **Precision / Recall / F1-score**: cân bằng giữa 2 lớp
-- **ROC Curve**: trực quan khả năng phân biệt
-- **Feature Importance**: features đóng góp nhiều nhất (XGBoost hoặc Spark RF)
+**Walk-Forward Validation** mô phỏng cách trader thực sự sử dụng mô hình:
+- Train trên dữ liệu quá khứ → test trên năm kế tiếp → mở rộng window → lặp lại.
+- Cho thấy model **ổn định qua nhiều chu kỳ thị trường** (COVID 2020, bull run 2021, bear 2022...).
+
+| Fold | Train | Test |
+|------|-------|------|
+| 1 | 2013–2018 | 2019 |
+| 2 | 2013–2019 | 2020 |
+| 3 | 2013–2020 | 2021 |
+| 4 | 2013–2021 | 2022 |
+| 5 | 2013–2022 | 2023 |
+| 6 | 2013–2023 | 2024 |
+
+Dùng **XGBoost** (nhanh nhất) để chạy 6 folds × 2 thị trường.
 
 
 ```python
-from sklearn.metrics import (confusion_matrix, classification_report,
-                             precision_score, recall_score, f1_score,
-                             roc_curve, auc as sk_auc)
-import matplotlib.pyplot as plt
+# ── WALK-FORWARD VALIDATION ─────────────────────────────────────────────────
+from xgboost import XGBClassifier
+from sklearn.preprocessing import StandardScaler as SS
+from sklearn.metrics import accuracy_score, roc_auc_score
+import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 
-def get_model_eval_data(res, res_xgb, res_dl, model_name):
-    """Trả về y_true, y_pred, y_prob, fi_names, fi_scores, fi_label."""
-    if model_name == 'XGBoost':
-        y_true = np.asarray(res_xgb['y_ts']).astype(int)
-        y_pred = np.asarray(res_xgb['y_pred']).astype(int)
-        X_ts   = res_xgb['scaler'].transform(
-                    res_xgb['df_ts'][res_xgb['features']].values.astype(np.float64))
-        y_prob = res_xgb['model'].predict_proba(X_ts)[:, 1]
-        fi        = res_xgb['feature_importance']
-        fi_names  = fi.index.tolist()[::-1][-12:]
-        fi_scores = fi.values.tolist()[::-1][-12:]
-        fi_label  = 'Feature Importance (XGBoost)'
-    elif model_name in ('LSTM', 'GRU'):
-        dl_met = res_dl['metrics'][model_name]
-        if 'y_ts' in dl_met:
-            y_true = np.asarray(dl_met['y_ts']).astype(int)
-            y_pred = np.asarray(dl_met['y_pred']).astype(int)
-            y_prob = np.asarray(dl_met['y_prob'])
-        else:
-            # Pipeline cu chua luu y_ts -> fallback: dung XGBoost data de danh gia
-            print(f'  [Fallback] {model_name} chua co y_ts (re-run DL pipeline de co du lieu chinh xac)')
-            print(f'  [Fallback] Dung XGBoost predictions de ve bieu do danh gia thay the')
-            y_true = np.asarray(res_xgb['y_ts']).astype(int)
-            y_pred = np.asarray(res_xgb['y_pred']).astype(int)
-            X_ts   = res_xgb['scaler'].transform(
-                        res_xgb['df_ts'][res_xgb['features']].values.astype(np.float64))
-            y_prob = res_xgb['model'].predict_proba(X_ts)[:, 1]
-        fi        = res_xgb['feature_importance']
-        fi_names  = fi.index.tolist()[::-1][-12:]
-        fi_scores = fi.values.tolist()[::-1][-12:]
-        fi_label  = f'Feature Importance (XGBoost proxy cho {model_name})'
-    else:  # Spark model (LR, RF, GBT, SVC, Ensemble)
-        pred_df = res['predictions'][model_name]
-        # SVC va mot so model khong co cot probability -> kiem tra truoc
-        avail_prob = [c for c in ['label', 'prediction', 'probability', 'rawPrediction']
-                      if c in pred_df.columns]
-        pred_pd = pred_df.select(*avail_prob).toPandas()
-        y_true  = pred_pd['label'].astype(int).values
-        y_pred  = pred_pd['prediction'].astype(int).values
-        if 'probability' in pred_pd.columns:
-            try:
-                y_prob = pred_pd['probability'].apply(lambda v: float(v[1])).values
-            except Exception:
-                y_prob = y_pred.astype(float)
-        elif 'rawPrediction' in pred_pd.columns:
-            try:
-                # PySpark LinearSVC: rawPrediction la 1-phan-tu [margin]
-                # Cac model khac (RF/GBT): 2-phan-tu [score_0, score_1]
-                rp_sample = pred_pd['rawPrediction'].iloc[0]
-                rp_len = len(rp_sample) if hasattr(rp_sample, '__len__') else 1
-                if rp_len >= 2:
-                    y_prob = pred_pd['rawPrediction'].apply(lambda v: float(v[1])).values
-                else:
-                    # LinearSVC: margin > 0 -> class 1, su dung truc tiep lam score
-                    y_prob = pred_pd['rawPrediction'].apply(lambda v: float(v[0])).values
-            except Exception:
-                y_prob = y_pred.astype(float)
-        else:
-            y_prob = y_pred.astype(float)
-        fi_list   = res['feature_importance'][:12]
-        fi_names  = [f[0] for f in fi_list][::-1]
-        fi_scores = [float(f[1]) for f in fi_list][::-1]
-        fi_label  = f'Feature Importance (RF — proxy cho {model_name})'
-    return y_true, y_pred, y_prob, fi_names, fi_scores, fi_label
+def walk_forward_validation(df_spark, market_name, feature_cols, folds=None):
+    """Walk-forward validation: expanding window, 1 year test per fold."""
+    if folds is None:
+        folds = [
+            (2018, 2019), (2019, 2020), (2020, 2021),
+            (2021, 2022), (2022, 2023), (2023, 2024),
+        ]
 
+    XGB_BASE = [c for c in feature_cols if c not in
+                ('ticker_idx', 'macd_hist', 'log_volume', 'log_lag1_volume')]
+    needed = list(set(['time', 'ticker', 'close', 'volume', 'lag1_volume',
+                        'label', 'year', 'next_close'] + XGB_BASE))
+    avail  = [c for c in needed if c in df_spark.columns]
+    df_pd  = df_spark.select(*avail).toPandas()
+    df_pd['time'] = pd.to_datetime(df_pd['time'])
+    df_pd = df_pd.sort_values(['ticker', 'time']).reset_index(drop=True)
 
-fig, axes = plt.subplots(2, 3, figsize=(20, 12))
+    # Recompute MACD & log_volume
+    ema12 = df_pd.groupby('ticker')['close'].transform(lambda s: s.ewm(span=12, adjust=False).mean())
+    ema26 = df_pd.groupby('ticker')['close'].transform(lambda s: s.ewm(span=26, adjust=False).mean())
+    macd_r = ema12 - ema26
+    df_pd['_macd_r'] = macd_r
+    macd_sig = df_pd.groupby('ticker')['_macd_r'].transform(lambda s: s.ewm(span=9, adjust=False).mean())
+    df_pd.drop(columns=['_macd_r'], inplace=True)
+    cs = df_pd['close'].where(df_pd['close'] != 0, np.nan)
+    df_pd['macd_real']      = (macd_r / cs).fillna(0)
+    df_pd['macd_hist_real'] = ((macd_r - macd_sig) / cs).fillna(0)
+    df_pd['log_volume']      = np.log1p(df_pd['volume'].clip(lower=0))
+    df_pd['log_lag1_volume'] = np.log1p(df_pd['lag1_volume'].clip(lower=0))
 
-for row, (res, res_xgb, res_dl, mkt, best_name) in enumerate([
-    (res_us, res_us_xgb, res_us_dl, 'US', best_us_name),
-    (res_vn, res_vn_xgb, res_vn_dl, 'VN', best_vn_name),
-]):
-    y_true, y_pred, y_prob, fi_names, fi_scores, fi_label = get_model_eval_data(
-        res, res_xgb, res_dl, best_name)
+    feat = [c for c in XGB_BASE if c in df_pd.columns]
+    feat += ['log_volume', 'log_lag1_volume', 'macd_real', 'macd_hist_real']
+    feat  = list(dict.fromkeys([c for c in feat if c in df_pd.columns]))
+    df_pd = df_pd.dropna(subset=feat + ['label']).reset_index(drop=True)
 
-    # ── (1) Confusion Matrix ──
-    cm = confusion_matrix(y_true, y_pred)
-    ax = axes[row, 0]
-    ax.imshow(cm, cmap='Blues')
-    for (ii, jj), v in np.ndenumerate(cm):
-        ax.text(jj, ii, f'{v:,d}', ha='center', va='center', fontsize=15,
-                fontweight='bold', color='white' if v > cm.max()/2 else 'black')
-    ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
-    ax.set_xticklabels(['DOWN (0)', 'UP (1)']); ax.set_yticklabels(['DOWN (0)', 'UP (1)'])
-    ax.set_xlabel('Predicted'); ax.set_ylabel('Actual')
-    ax.set_title(f'{mkt} — Confusion Matrix ({best_name})', fontweight='bold', fontsize=12)
+    sep = '=' * 65
+    print(f'\n{sep}\nWALK-FORWARD VALIDATION — {market_name} ({len(feat)} features)\n{sep}')
+    print(f'  {"Fold":>4s}  {"Train window":>22s}  {"Test year":>9s}  '
+          f'{"Accuracy":>9s}  {"AUC":>7s}  {"N_test":>7s}')
+    print('-' * 65)
 
-    # ── (2) ROC Curve ──
-    fpr, tpr, _ = roc_curve(y_true, y_prob)
-    roc_auc = sk_auc(fpr, tpr)
-    ax = axes[row, 1]
-    ax.plot(fpr, tpr, color='darkorange', lw=2.5, label=f'ROC (AUC = {roc_auc:.3f})')
-    ax.plot([0, 1], [0, 1], 'k--', lw=1, label='Random (AUC = 0.5)')
-    ax.fill_between(fpr, tpr, alpha=0.15, color='darkorange')
-    ax.set_xlim([0, 1]); ax.set_ylim([0, 1.02])
-    ax.set_xlabel('False Positive Rate'); ax.set_ylabel('True Positive Rate')
-    ax.set_title(f'{mkt} — ROC Curve ({best_name})', fontweight='bold', fontsize=12)
-    ax.legend(loc='lower right')
-    ax.grid(True, alpha=0.3)
+    fold_results = []
+    for train_end_yr, test_yr in folds:
+        df_tr = df_pd[df_pd['year'] <= train_end_yr]
+        df_ts = df_pd[df_pd['year'] == test_yr]
+        if len(df_tr) < 100 or len(df_ts) < 10:
+            continue
+        sc = SS()
+        X_tr = sc.fit_transform(df_tr[feat].values.astype(np.float64))
+        y_tr = df_tr['label'].values.astype(int)
+        X_ts = sc.transform(df_ts[feat].values.astype(np.float64))
+        y_ts = df_ts['label'].values.astype(int)
 
-    # ── (3) Feature Importance ──
-    ax = axes[row, 2]
-    ax.barh(fi_names, fi_scores, color='steelblue', alpha=0.85)
-    ax.set_title(f'{mkt} — {fi_label}', fontweight='bold', fontsize=11)
-    ax.set_xlabel('Importance')
-    ax.tick_params(axis='y', labelsize=9)
+        mdl = XGBClassifier(n_estimators=200, max_depth=4, learning_rate=0.05,
+                            subsample=0.8, colsample_bytree=0.8,
+                            use_label_encoder=False, eval_metric='logloss',
+                            random_state=42, verbosity=0)
+        mdl.fit(X_tr, y_tr)
+        y_prob = mdl.predict_proba(X_ts)[:, 1]
+        y_pred = (y_prob > 0.5).astype(int)
+        acc = accuracy_score(y_ts, y_pred)
+        auc = roc_auc_score(y_ts, y_prob)
+        fold_results.append({'fold': f'{test_yr}', 'train_end': train_end_yr,
+                              'test_year': test_yr, 'accuracy': acc,
+                              'auc': auc, 'n_test': len(y_ts)})
+        print(f'  {test_yr:>4d}  {"2013":>6s}–{train_end_yr:<4d}  '
+              f'  {test_yr:>4d}       {acc:.4f}   {auc:.4f}  {len(y_ts):>7d}')
 
-    # ── In classification report ──
-    print('=' * 64)
-    print(f'{mkt} — {best_name} Classification Report (test set)')
-    print('=' * 64)
-    print(classification_report(y_true, y_pred, target_names=['DOWN','UP'], digits=4))
-    print(f'  Precision (UP): {precision_score(y_true, y_pred):.4f}')
-    print(f'  Recall    (UP): {recall_score(y_true, y_pred):.4f}')
-    print(f'  F1-score  (UP): {f1_score(y_true, y_pred):.4f}')
-    print()
+    if fold_results:
+        accs = [r['accuracy'] for r in fold_results]
+        aucs = [r['auc'] for r in fold_results]
+        print('-' * 65)
+        print(f'  {"MEAN":>4s}  {"":>22s}  {"":>9s}  '
+              f'{np.mean(accs):.4f}   {np.mean(aucs):.4f}')
+        print(f'  {"STD":>4s}  {"":>22s}  {"":>9s}  '
+              f'{np.std(accs):.4f}   {np.std(aucs):.4f}')
+    return fold_results
 
-plt.suptitle(f'Danh gia chi tiet mo hinh tot nhat: Confusion Matrix | ROC | Feature Importance\n'
-             f'US: {best_us_name}  |  VN: {best_vn_name}',
-             fontsize=14, fontweight='bold', y=1.01)
-plt.tight_layout()
-plt.show()
-print(f'ok Danh gia chi tiet xong! (US: {best_us_name} | VN: {best_vn_name})')
+wf_us = walk_forward_validation(df_us, 'US', FEATURE_COLS_US)
+wf_vn = walk_forward_validation(df_vn, 'VN', FEATURE_COLS_VN)
 
 ```
 
-    ================================================================
-    US — GBT Classification Report (test set)
-    ================================================================
-                  precision    recall  f1-score   support
     
-            DOWN     0.5019    0.4116    0.4523      6881
-              UP     0.5419    0.6301    0.5827      7600
+    =================================================================
+    WALK-FORWARD VALIDATION — US (52 features)
+    =================================================================
+      Fold            Train window  Test year   Accuracy      AUC   N_test
+    -----------------------------------------------------------------
+      2019    2013–2018    2019       0.5023   0.4571     1720
+      2020    2013–2019    2020       0.4873   0.4910     3193
+      2021    2013–2020    2021       0.5365   0.5254     2218
+      2022    2013–2021    2022       0.5061   0.5430     3219
+      2023    2013–2022    2023       0.5163   0.5211     2119
+      2024    2013–2023    2024       0.5445   0.5310     1991
+    -----------------------------------------------------------------
+      MEAN                                     0.5155   0.5114
+       STD                                     0.0197   0.0290
     
-        accuracy                         0.5263     14481
-       macro avg     0.5219    0.5208    0.5175     14481
-    weighted avg     0.5229    0.5263    0.5207     14481
+    =================================================================
+    WALK-FORWARD VALIDATION — VN (47 features)
+    =================================================================
+      Fold            Train window  Test year   Accuracy      AUC   N_test
+    -----------------------------------------------------------------
+      2019    2013–2018    2019       0.5784   0.6064     1874
+      2020    2013–2019    2020       0.5677   0.5624     2940
+      2021    2013–2020    2021       0.5703   0.5690     3065
+      2022    2013–2021    2022       0.5536   0.5806     3537
+      2023    2013–2022    2023       0.5364   0.5560     2444
+      2024    2013–2023    2024       0.5602   0.5750     1878
+    -----------------------------------------------------------------
+      MEAN                                     0.5611   0.5749
+       STD                                     0.0135   0.0162
     
-      Precision (UP): 0.5419
-      Recall    (UP): 0.6301
-      F1-score  (UP): 0.5827
+
+
+```python
+# ── Vẽ biểu đồ Walk-Forward Accuracy theo năm ───────────────────────────────
+fig, axes = plt.subplots(1, 2, figsize=(16, 5))
+fig.suptitle('Walk-Forward Validation — Accuracy qua từng năm test', fontsize=13, fontweight='bold')
+
+for ax, wf_res, mkt, color in [
+    (axes[0], wf_us, 'US', '#2563EB'),
+    (axes[1], wf_vn, 'VN', '#16A34A'),
+]:
+    if not wf_res:
+        ax.set_title(f'{mkt}: no data')
+        continue
+    years  = [r['test_year'] for r in wf_res]
+    accs   = [r['accuracy']  for r in wf_res]
+    aucs   = [r['auc']       for r in wf_res]
+    mean_acc = np.mean(accs)
+
+    ax.plot(years, accs, 'o-', color=color, linewidth=2, markersize=8, label='Accuracy')
+    ax.plot(years, aucs, 's--', color=color, linewidth=1.5, markersize=6, alpha=0.7, label='AUC-ROC')
+    ax.axhline(0.5, color='gray', linestyle=':', linewidth=1.5, label='Random (0.50)')
+    ax.axhline(mean_acc, color=color, linestyle='--', linewidth=1, alpha=0.5,
+               label=f'Mean acc={mean_acc:.3f}')
+    ax.fill_between(years, 0.5, accs, alpha=0.1, color=color)
+
+    # Annotate each point
+    for yr, ac in zip(years, accs):
+        ax.annotate(f'{ac:.3f}', (yr, ac), textcoords='offset points',
+                    xytext=(0, 10), ha='center', fontsize=9)
+
+    ax.set_title(f'{mkt} Stocks — Walk-Forward (XGBoost)', fontsize=11, fontweight='bold')
+    ax.set_xlabel('Test Year')
+    ax.set_ylabel('Score')
+    ax.set_ylim(0.42, 0.72)
+    ax.legend(fontsize=9)
+    ax.grid(True, alpha=0.3)
+
+plt.tight_layout()
+plt.show()
+print('\nNhận xét: Accuracy khác nhau theo từng năm phản ánh đúng thực tế thị trường.')
+print('Năm 2020 (COVID) thường khó dự báo hơn do biến động bất thường.')
+
+```
+
+
     
-    ================================================================
-    VN — GRU Classification Report (test set)
-    ================================================================
-                  precision    recall  f1-score   support
-    
-            DOWN     0.5340    0.6090    0.5690      3560
-              UP     0.5990    0.5235    0.5587      3971
-    
-        accuracy                         0.5639      7531
-       macro avg     0.5665    0.5663    0.5639      7531
-    weighted avg     0.5682    0.5639    0.5636      7531
-    
-      Precision (UP): 0.5990
-      Recall    (UP): 0.5235
-      F1-score  (UP): 0.5587
-    
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_38_0.png)
     
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_35_1.png)
-    
-
-
-    ok Danh gia chi tiet xong! (US: GBT | VN: GRU)
+    Nhận xét: Accuracy khác nhau theo từng năm phản ánh đúng thực tế thị trường.
+    Năm 2020 (COVID) thường khó dự báo hơn do biến động bất thường.
     
 
 ## PHẦN 12: DỰ BÁO XU HƯỚNG GIÁ — THÁNG 4/2026 & 5/2026
@@ -2758,24 +2579,24 @@ print(f"\nTat ca fetch xong. Se du bao phan tu {DEMO_START} tro di.")
 
 ```
 
-    Fetch: 2025-11-29 -> 2026-05-28
+    Fetch: 2025-11-27 -> 2026-05-26
     Demo hien thi tu: 2026-05-01
     Fetching AAPL ...
-      AAPL: 122 rows  (2025-12-01 - 2026-05-27)
+      AAPL: 121 rows  (2025-11-28 - 2026-05-22)
     Fetching VCB ...
-      VCB : 128 rows  (2025-12-01 - 2026-05-27)
+      VCB : 118 rows  (2025-11-27 - 2026-05-25)
     Fetching FPT ...
-      FPT : 128 rows  (2025-12-01 - 2026-05-27)
+      FPT : 118 rows  (2025-11-27 - 2026-05-25)
     Fetching VNINDEX (KBS)...
       VNINDEX FAILED: No module named 'vnstock' -- dung 0
     Fetching S&P 500 (^GSPC)...
-      S&P500: 122 rows
+      S&P500: 121 rows
     Fetching VIX (^VIX)...
-      VIX: 123 rows
+      VIX: 122 rows
     Fetching 10Y Treasury (^TNX)...
-      TNX: 122 rows
+      TNX: 121 rows
     Fetching 3M T-bill (^IRX)...
-      IRX: 122 rows
+      IRX: 121 rows
     
     Tat ca fetch xong. Se du bao phan tu 2026-05-01 tro di.
     
@@ -2811,10 +2632,6 @@ def compute_features_pandas(df_raw):
     df['price_vs_ma5']  = close / ma5  - 1
     df['price_vs_ma20'] = close / ma20 - 1
     df['price_vs_ma50'] = close / ma50 - 1
-    df['ma5_vs_ma20']  = ma5  / (ma20 + 1e-9) - 1
-    df['ma20_vs_ma50'] = ma20 / (ma50 + 1e-9) - 1
-    hl_range = (high - low) / (close + 1e-9)
-    df['hl_ratio']     = hl_range.rolling(5).mean() / (hl_range.rolling(20).mean() + 1e-9)
     df['momentum_5']    = close / close.shift(5)  - 1
     df['momentum_10']   = close / close.shift(10) - 1
 
@@ -2999,7 +2816,7 @@ print("Columns sample:", [c for c in demo_features_all['AAPL'].columns if c in
 
 ```
 
-    Features computed: {'AAPL': (122, 67), 'VCB': (128, 58), 'FPT': (128, 58)}
+    Features computed: {'AAPL': (121, 64), 'VCB': (118, 55), 'FPT': (118, 55)}
     Columns sample: ['sector_idx', 'vni_ret1d', 'vni_mom5', 'vni_ma_ratio']
     
 
@@ -3008,33 +2825,20 @@ print("Columns sample:", [c for c in demo_features_all['AAPL'].columns if c in
 # ── Lay model tot nhat (Spark / XGBoost / LSTM / GRU) va du bao ─────────────────────
 import numpy as np
 
-def best_model_predict(res, res_xgb, res_dl, feat_df, ticker_sym, model_name=None):
+def best_model_predict(res, res_xgb, res_dl, feat_df, ticker_sym):
     """
-    Du bao xu huong gia su dung mo hinh tot nhat.
-    - model_name: ten mo hinh cu the (tu best_us_name / best_vn_name).
-      Neu None, tu dong chon theo accuracy cao nhat (legacy fallback).
-    - LSTM/GRU  : build sequence 20 ngay.
-    - XGBoost   : flat feature vector.
-    - Spark (LR/RF/GBT/SVC/Ensemble): fitted Spark object khong duoc luu sau pipeline
-      -> dung XGBoost lam proxy inference, hien thi ro ten mo hinh that.
+    So sanh 3 nhom model (Spark / XGBoost / DL), chon nhom co accuracy cao nhat.
+    - XGBoost & Spark-fallback: dung scaler + feature vector phang (1 sample = 1 hang).
+    - LSTM/GRU: build sequence 20 ngay cho moi prediction.
     """
-    # Xac dinh ten mo hinh su dung
-    if model_name is None:
-        best_spark_acc    = max(res["metrics"][k]["accuracy"] for k in res["metrics"])
-        xgb_acc           = res_xgb["accuracy"]
-        best_dl_name_auto = max(res_dl["metrics"], key=lambda k: res_dl["metrics"][k]["accuracy"])
-        dl_acc            = res_dl["metrics"][best_dl_name_auto]["accuracy"]
-        scores            = {"XGBoost": xgb_acc, "Spark": best_spark_acc, "DL": dl_acc}
-        winner_group      = max(scores, key=scores.get)
-        if winner_group == "DL":
-            model_name = best_dl_name_auto
-        elif winner_group == "XGBoost":
-            model_name = "XGBoost"
-        else:
-            model_name = max(res["metrics"], key=lambda k: res["metrics"][k]["accuracy"])
+    # Accuracy cao nhat moi nhom
+    best_spark_acc = max(res["metrics"][k]["accuracy"] for k in res["metrics"])
+    xgb_acc        = res_xgb["accuracy"]
+    best_dl_name   = max(res_dl["metrics"], key=lambda k: res_dl["metrics"][k]["accuracy"])
+    dl_acc         = res_dl["metrics"][best_dl_name]["accuracy"]
 
-    # Tinh extra features (dung chung cho ca XGBoost va DL path)
-    df       = feat_df.copy()
+    # Tinh extra features (chung cho ca XGB va DL)
+    df = feat_df.copy()
     ema12    = df["close"].ewm(span=12, adjust=False).mean()
     ema26    = df["close"].ewm(span=26, adjust=False).mean()
     macd_r   = ema12 - ema26
@@ -3044,66 +2848,59 @@ def best_model_predict(res, res_xgb, res_dl, feat_df, ticker_sym, model_name=Non
     df["macd_hist_real"]  = ((macd_r - macd_sig) / cs).fillna(0)
     df["log_volume"]      = np.log1p(df["volume"].clip(lower=0))
     df["log_lag1_volume"] = np.log1p(df["volume"].shift(1).clip(lower=0))
-    df = df.replace([np.inf, -np.inf], np.nan)
 
-    # ── DL path: LSTM / GRU ──────────────────────────────────────────────────
-    if model_name in ("LSTM", "GRU"):
-        dl_met    = res_dl["metrics"].get(model_name)
+    # Chon model thang
+    scores = {"XGBoost": xgb_acc, "Spark": best_spark_acc, "DL": dl_acc}
+    winner = max(scores, key=scores.get)
+
+    if winner == "DL":
         feat_list = res_dl["features"]
         scaler    = res_dl["scaler"]
+        model     = res_dl["metrics"][best_dl_name]["model"]
         seq_len   = res_dl["seq_len"]
+        # Fill features thieu voi 0 de scaler nhan dung shape
+        for f in feat_list:
+            if f not in df.columns:
+                df[f] = 0.0
+        df_clean  = df.dropna(subset=feat_list).reset_index(drop=True)
 
-        if dl_met is None or "model" not in dl_met:
-            print(f"  {ticker_sym}: {model_name} model khong co san -> fallback XGBoost")
-            model_name = "XGBoost"
+        if len(df_clean) <= seq_len:
+            print(f"  {ticker_sym}: khong du {seq_len} ngay cho DL, fallback XGBoost")
+            winner = "XGBoost"
         else:
-            dl_acc   = dl_met["accuracy"]
-            model    = dl_met["model"]
-            for f in feat_list:
-                if f not in df.columns:
-                    df[f] = 0.0
-            df_clean = df.dropna(subset=feat_list).reset_index(drop=True)
+            X_all = scaler.transform(df_clean[feat_list].values.astype(np.float32))
+            X_seq = np.array([X_all[i-seq_len:i] for i in range(seq_len, len(X_all))],
+                             dtype=np.float32)
+            y_prob = model.predict(X_seq, verbose=0).flatten()
+            y_pred = (y_prob > 0.5).astype(int)
+            df_out = df_clean.iloc[seq_len:].copy()
+            df_out["prediction"] = y_pred
+            model_name = f"{best_dl_name} (acc={dl_acc:.3f})"
+            print(f"  {ticker_sym}: {model_name} | {len(df_out)} rows | features={len(feat_list)}")
+            return df_out[["time","close","prediction"]]
 
-            if len(df_clean) <= seq_len:
-                print(f"  {ticker_sym}: khong du {seq_len} ngay cho {model_name} -> fallback XGBoost")
-                model_name = "XGBoost"
-            else:
-                X_all = scaler.transform(df_clean[feat_list].values.astype(np.float64))
-                X_seq = np.array([X_all[i - seq_len:i] for i in range(seq_len, len(X_all))],
-                                 dtype=np.float32)
-                y_prob = model.predict(X_seq, verbose=0).flatten()
-                y_pred = (y_prob > 0.5).astype(int)
-                df_out = df_clean.iloc[seq_len:].copy()
-                df_out["prediction"] = y_pred
-                print(f"  {ticker_sym}: {model_name} (acc={dl_acc:.3f}) | {len(df_out)} rows")
-                return df_out[["time", "close", "prediction"]]
-
-    # ── XGBoost path ─────────────────────────────────────────────────────────
+    # XGBoost (hoac Spark-fallback ve XGBoost)
     feat_list = res_xgb["features"]
     scaler    = res_xgb["scaler"]
     model     = res_xgb["model"]
-    xgb_acc   = res_xgb["accuracy"]
-
-    if model_name == "XGBoost":
-        model_label = f"XGBoost (acc={xgb_acc:.3f})"
+    if winner == "XGBoost":
+        model_name = f"XGBoost (acc={xgb_acc:.3f})"
     else:
-        # Spark models: LR / RF / GBT / SVC / Ensemble
-        # Fitted Spark object khong duoc luu -> dung XGBoost lam proxy cho inference
-        spark_acc   = res["metrics"].get(model_name, {}).get("accuracy", 0.0)
-        model_label = f"{model_name} (acc={spark_acc:.3f}) [proxy: XGBoost inference]"
+        best_k     = max(res["metrics"], key=lambda k: res["metrics"][k]["accuracy"])
+        model_name = f"XGBoost-fallback (spark best={best_k} {best_spark_acc:.3f})"
 
+    # Fill features thieu voi 0 de scaler nhan dung shape
     for f in feat_list:
         if f not in df.columns:
             df[f] = 0.0
     df_clean = df.dropna(subset=feat_list).copy()
-    X        = scaler.transform(df_clean[feat_list].values.astype(np.float64))
-    preds    = model.predict(X)
+    X = scaler.transform(df_clean[feat_list].values.astype(np.float64))
+    preds = model.predict(X)
     df_clean["prediction"] = preds
-    print(f"  {ticker_sym}: {model_label} | {len(df_clean)} rows | features={len(feat_list)}")
-    return df_clean[["time", "close", "prediction"]]
+    print(f"  {ticker_sym}: {model_name} | {len(df_clean)} rows | features={len(feat_list)}")
+    return df_clean[["time","close","prediction"]]
 
-
-# Gan ticker vao nhom — su dung mo hinh tot nhat da chon o Phan 10
+# Gan ticker vao nhom (giu nguyen 3 ticker demo)
 demo_assign = {
     "AAPL": (res_us, res_us_xgb, res_us_dl),
     "VCB":  (res_vn, res_vn_xgb, res_vn_dl),
@@ -3112,23 +2909,22 @@ demo_assign = {
 
 demo_results = {}
 for sym, (res, res_xgb, res_dl) in demo_assign.items():
-    mdl_name = best_us_name if sym == "AAPL" else best_vn_name
-    print(f"Predicting {sym} (model={mdl_name})...")
+    print(f"Predicting {sym}...")
     feat_df = demo_features_all[sym]
-    demo_results[sym] = best_model_predict(res, res_xgb, res_dl, feat_df, sym, model_name=mdl_name)
+    demo_results[sym] = best_model_predict(res, res_xgb, res_dl, feat_df, sym)
 
 print("Du bao hoan tat!")
 print({sym: len(v) for sym, v in demo_results.items()})
 ```
 
-    Predicting AAPL (model=GBT)...
-      AAPL: GBT (acc=0.526) [proxy: XGBoost inference] | 73 rows | features=55
-    Predicting VCB (model=GRU)...
-      VCB: GRU (acc=0.564) | 51 rows
-    Predicting FPT (model=GRU)...
-      FPT: GRU (acc=0.564) | 51 rows
+    Predicting AAPL...
+      AAPL: XGBoost-fallback (spark best=GBT 0.527) | 72 rows | features=52
+    Predicting VCB...
+      VCB: XGBoost-fallback (spark best=GBT 0.553) | 69 rows | features=47
+    Predicting FPT...
+      FPT: XGBoost-fallback (spark best=GBT 0.553) | 69 rows | features=47
     Du bao hoan tat!
-    {'AAPL': 73, 'VCB': 51, 'FPT': 51}
+    {'AAPL': 72, 'VCB': 69, 'FPT': 69}
     
 
 
@@ -3140,7 +2936,6 @@ import pandas as pd
 
 fig, axes = plt.subplots(1, 3, figsize=(21, 7))
 fig.suptitle(f'Du bao xu huong gia — Thang {date.today().month}/{date.today().year}\n'
-             f'US: {best_us_name}  |  VN: {best_vn_name}  |  '
              '(Xanh=UP, Do=DOWN, Kim cuong=sai, Mu vang=Du bao ngay mai)',
              fontsize=13, fontweight='bold')
 
@@ -3242,20 +3037,117 @@ print('* Du bao dua tren mo hinh train den 2021. Khong phai tu van dau tu.')
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_40_0.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_43_0.png)
     
 
 
     
     ============================================================
-    DU BAO XU HUONG — 29/05/2026 (ngay giao dich tiep theo)
+    DU BAO XU HUONG — 27/05/2026 (ngay giao dich tiep theo)
     ============================================================
-      AAPL   (US ) | ▲   UP | Close hom nay: 310.85
-      VCB    (VN ) | ▼ DOWN | Close hom nay: 64,200.00
-      FPT    (VN ) | ▼ DOWN | Close hom nay: 72,600.00
+      AAPL   (US ) | ▼ DOWN | Close hom nay: 308.82
+      VCB    (VN ) | ▼ DOWN | Close hom nay: 63,700.00
+      FPT    (VN ) | ▲   UP | Close hom nay: 73,500.00
     ============================================================
     * Du bao dua tren mo hinh train den 2021. Khong phai tu van dau tu.
     
+
+## DANH MUC HINH ANH
+
+| STT | Ten hinh | Mo ta |
+|-----|----------|-------|
+| Hinh 4.1 | Bieu do so sanh accuracy 8 mo hinh US vs VN | So sanh LR, RF, GBT, SVC, XGBoost, Ensemble, LSTM, GRU tren 2 thi truong |
+| Hinh 4.2 | Confusion Matrix XGBoost — US va VN | Ma tran nham lan XGBoost, the hien du doan dung/sai tren tap test |
+| Hinh 4.3 | ROC Curve XGBoost — US va VN | Duong cong ROC va AUC cua XGBoost danh gia kha nang phan loai UP/DOWN |
+| Hinh 4.4 | Feature Importance Random Forest — US (top 15) | 15 dac trung quan trong nhat theo RF tren co phieu My |
+| Hinh 4.5 | Feature Importance Random Forest — VN (top 15) | 15 dac trung quan trong nhat theo RF tren co phieu Viet Nam |
+| Hinh 4.6 | Backtest — Equity curve US Strategy vs B&H | Tang truong von theo tin hieu mo hinh vs mua giu thi truong My |
+| Hinh 4.7 | Backtest — Equity curve VN Strategy vs B&H | Tang truong von theo tin hieu mo hinh vs mua giu thi truong Viet Nam |
+| Hinh 4.8 | Walk-Forward Accuracy theo tung nam test | Accuracy qua tung nam kiem thu walk-forward, danh gia on dinh mo hinh |
+| Hinh 5.1 | Bieu do du bao AAPL (US) — thang 5/2026 | Gia AAPL kem du bao xu huong ngay hom sau trong thang 5/2026 |
+| Hinh 5.2 | Bieu do du bao VCB va FPT (VN) — thang 5/2026 | Gia VCB va FPT kem du bao xu huong ngay hom sau trong thang 5/2026 |
+
+
+## PHẦN CUỐI: TỔNG HỢP TẤT CẢ CẢI TIẾN
+
+### Các cải tiến đã thực hiện:
+
+| # | Cải tiến | Mô tả |
+|---|----------|-------|
+| 1 | **Ngưỡng label thống nhất** | Cả US & VN dùng `next-day ±1.5%` (chọn sau thực nghiệm 8 cấu hình). VN edge +7.3%, US edge +0.8% |
+| 2 | **Features kỹ thuật cơ bản** | MA5/10/20/50, price_vs_ma5/20/50, Bollinger Bands (upper/lower/mid/bandwidth/%B), ATR(14), ATR ratio |
+| 3 | **Features dao động (oscillator)** | RSI(7), RSI(14), Stochastic %K, Williams %R, CCI(14), Momentum 5/10d |
+| 4 | **Features xu hướng & biến động** | MACD, MACD signal, MACD histogram, ADX(14), Volatility 5d/10d/20d |
+| 5 | **Features Volume** | log_volume, log_lag1_volume, volume_change, volume_ma_ratio, OBV signal |
+| 6 | **Features đặc thù thị trường VN** | limit_hit_rate (±7%), zero_change_rate, vol_consistency, intraday_pos, ato_gap |
+| 7 | **Features context thị trường** | sector_idx (11 nhóm ngành), vni_ret1d, vni_mom5, vni_ma_ratio (từ VN-Index) |
+| 8 | **Lag features đa khung thời gian** | lag1/2/3/5/10_return, lag1/2/3_close, lag1_volume – tổng **47 features (VN) / 52 features (US)** |
+| 9 | **Tách thị trường US vs VN** | Pipeline + scaler + class weight riêng cho mỗi thị trường – tránh data leakage |
+| 10 | **Winsorize outliers** | Cắt extreme values trên 12 features (returns, momentum, volume) trước khi train |
+| 11 | **StandardScaler** | Chuẩn hóa features (mean=0, std=1) – Logistic Regression hội tụ tốt hơn |
+| 12 | **Log-transform Volume** | `log1p(volume)` – giảm skew phân phối, ổn định thang đo |
+| 13 | **Class Weighting** | Cân bằng nhãn 0/1 cho LR, RF, GBT, XGBoost, LSTM, GRU |
+| 14 | **4 model Spark ML** | Logistic Regression, Random Forest, Gradient Boosted Trees, LinearSVC |
+| 15 | **Ensemble Weighted Vote** | Kết hợp LR+RF+GBT+SVC, trọng số = AUC-ROC của từng model |
+| 16 | **MACD – EMA thực** | `ewm(span=12)` & `ewm(span=26)` trong pipeline XGBoost + LSTM/GRU (Spark dùng SMA proxy) |
+| 17 | **XGBoost** | Gradient Boosting chuẩn công nghiệp (sklearn/XGBoost), 400 trees, scale_pos_weight cho imbalance |
+| 18 | **LSTM + GRU (Học sâu)** | 2-layer RNN với Dropout 0.5, EarlyStopping, ReduceLROnPlateau – chuỗi 20 ngày/ticker |
+| 19 | **Time-series Split** | Train: year ≤ 2021 – Test: year ≥ 2022 (đúng nguyên tắc time-series, không leak tương lai) |
+| 20 | **Backtest chiến lược** | Mô phỏng mua khi RF dự đoán UP, so sánh Strategy Return vs Buy & Hold |
+| 21 | **Demo dự báo thực tế** | Lấy data Apr–May 2026 từ yfinance, dự báo bằng model tốt nhất, vẽ biểu đồ trực quan |
+
+### Tổng số models đã train: **8 models × 2 thị trường = 16 lượt training**
+- **Spark ML** (4): Logistic Regression, Random Forest, GBT, LinearSVC
+- **Ensemble** (1): Weighted Vote
+- **XGBoost** (1): pandas + sklearn
+- **Deep Learning** (2): LSTM, GRU (Keras/TensorFlow)
+
+### Pipeline tổng thể:
+```
+Dữ liệu thô (60 mã: 27 US + 33 VN, ~10 năm 2013–2026)
+  ↓ PySpark Feature Engineering (47 features VN / 52 features US qua Window Functions)
+  ↓ Winsorize outliers + Drop nulls
+  ↓ Tách US vs VN (ngưỡng label, label horizon riêng)
+  ↓ StandardScaler + Class Weighting + Time-series Split (train≤2021, test≥2022)
+  ├─ Spark ML: LR / RF / GBT / LinearSVC → Ensemble Weighted Vote
+  ├─ Pandas/sklearn: XGBoost (EMA MACD thực)
+  └─ Keras/TensorFlow: LSTM / GRU (sequence 20 ngày/ticker)
+       ↓
+  So sánh 8 models × 2 thị trường → Backtest chiến lược → Demo dự báo Apr-May 2026
+```
+
+
+## PHẦN KẾT LUẬN: TỔNG KẾT, HẠN CHẾ & HƯỚNG PHÁT TRIỂN
+
+### 1. Kết luận chính
+
+| # | Phát hiện | Bằng chứng |
+|---|-----------|------------|
+| 1 | **VN dự báo được tốt hơn US** | VN: acc ~55%, AUC ~0.58 (RF) — US: acc ~53%, AUC ~0.53 (Ensemble) |
+| 2 | **Backtest VN vượt xa Buy&Hold** | VN: Strategy ~2921% vs B&H ~1404% (+1517%) — US: Strategy ~1215% vs B&H ~1114% (+101%) |
+| 3 | **Minh chứng Efficient Market Hypothesis** | US (thị trường phát triển) hiệu quả → khó dự báo; VN (mới nổi) kém hiệu quả → còn alpha |
+| 4 | **Tree-based > Deep Learning trên tabular** | RF/XGBoost (0.53-0.55) > LSTM/GRU (0.50-0.53) ở cả 2 thị trường |
+| 5 | **PySpark xử lý hiệu quả 150k+ dòng** | Window Functions tính 47–52 features song song theo từng ticker |
+
+### 2. Bài học về Data Leakage (research integrity)
+
+Ban đầu model US đạt accuracy ~84% (AUC 0.93) — nhưng đây là **data leakage**: dùng VN-Index features cho cổ phiếu US (không có quan hệ nhân quả). Sau khi **tách feature list riêng** (US dùng S&P500 context, VN dùng VN-Index), accuracy về mức honest ~53%. **Con số thấp hơn nhưng đúng đắn về mặt khoa học.**
+
+### 3. Hạn chế
+
+- **Backtest chưa tính phí giao dịch & slippage** (~0.1-0.15%/lệnh) → lợi nhuận thực tế sẽ thấp hơn
+- **Survivorship bias**: chỉ dùng các mã đang niêm yết, bỏ sót mã đã hủy niêm yết
+- **MACD trong Spark dùng SMA proxy** (đã fix bằng EMA thực trong pipeline XGBoost/DL)
+- **Walk-forward validation** đã thực hiện với 6 folds (2019–2024) nhưng chưa kết hợp với refit tự động theo thời gian thực
+- **Chưa dùng dữ liệu phi cấu trúc**: tin tức, sentiment, báo cáo tài chính
+
+### 4. Hướng phát triển
+
+- Thêm **phí giao dịch** vào backtest để đánh giá lợi nhuận ròng
+- **Walk-forward validation** nhiều fold để kiểm tra độ ổn định theo thời gian
+- Tích hợp **sentiment analysis** từ tin tức/mạng xã hội
+- Thử **mô hình chuỗi thời gian chuyên biệt** (Temporal Fusion Transformer, N-BEATS)
+- Mở rộng sang **dự báo đa bước** (multi-step) thay vì chỉ next-day
 
 
 ```python
@@ -3271,38 +3163,13 @@ from datetime import date
 from sklearn.metrics import confusion_matrix, roc_curve, auc as sk_auc
 
 os.makedirs('figures', exist_ok=True)
-DPI = 200
+DPI = 200  # Do phan giai cao cho Word
 
 def save_fig(fig, filename, label):
     fpath = f'figures/{filename}.png'
     fig.savefig(fpath, dpi=DPI, bbox_inches='tight', facecolor='white')
     plt.show()
     print(f'  Saved: {fpath}')
-
-def _equity_preds_pd(res, res_xgb, res_dl, best_name):
-    """Lay DataFrame co time/close/next_close/prediction cho mo hinh tot nhat."""
-    cols = ['time', 'close', 'next_close', 'label', 'prediction']
-    if best_name == 'XGBoost':
-        df = res_xgb['df_ts'].copy()
-        df['prediction'] = res_xgb['y_pred']
-        avail = [c for c in cols if c in df.columns]
-        return df[avail]
-    elif best_name in ('LSTM', 'GRU'):
-        dl_met = res_dl['metrics'].get(best_name, {})
-        if 'df_ts_pd' in dl_met:
-            df = dl_met['df_ts_pd'].copy()
-            df['prediction'] = dl_met.get('y_pred', [0] * len(df))
-            avail = [c for c in cols if c in df.columns]
-            return df[avail]
-        else:
-            print(f'  [Note] {best_name} chua co df_ts_pd -> dung XGBoost data cho equity curve')
-            df = res_xgb['df_ts'].copy()
-            df['prediction'] = res_xgb['y_pred']
-            avail = [c for c in cols if c in df.columns]
-            return df[avail]
-    else:  # Spark model (LR/RF/GBT/SVC/Ensemble)
-        avail = [c for c in cols if c in res['predictions'][best_name].columns]
-        return res['predictions'][best_name].select(*avail).toPandas()
 
 # ── Hinh 4.1: So sanh Accuracy 8 mo hinh US vs VN ──────────────────────────
 print('Ve Hinh 4.1...')
@@ -3323,46 +3190,41 @@ ax.set_ylabel('Accuracy', fontsize=12); ax.set_ylim(0.45, 0.72)
 ax.legend(fontsize=11); ax.grid(True, alpha=0.3, axis='y')
 plt.tight_layout(); save_fig(fig, 'Hinh_4_1', '4.1')
 
-# ── Hinh 4.2: Confusion Matrix — Mo hinh tot nhat US va VN ─────────────────
+# ── Hinh 4.2: Confusion Matrix XGBoost — US va VN ──────────────────────────
 print('Ve Hinh 4.2...')
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-fig.suptitle(f'Hinh 4.2: Confusion Matrix — Mo hinh tot nhat\nUS: {best_us_name}  |  VN: {best_vn_name}',
-             fontsize=13, fontweight='bold')
-for ax, (res, rxgb, rdl, best_name, mkt) in zip(axes, [
-    (res_us, res_us_xgb, res_us_dl, best_us_name, 'US'),
-    (res_vn, res_vn_xgb, res_vn_dl, best_vn_name, 'VN'),
-]):
-    yt, yp, _, _, _, _ = get_model_eval_data(res, rxgb, rdl, best_name)
+fig.suptitle('Hinh 4.2: Confusion Matrix — XGBoost (US va VN)', fontsize=14, fontweight='bold')
+for ax, (rxgb, mkt) in zip(axes, [(res_us_xgb,'US'), (res_vn_xgb,'VN')]):
+    yt = np.asarray(rxgb['y_ts']).astype(int)
+    yp = np.asarray(rxgb['y_pred']).astype(int)
     cm = confusion_matrix(yt, yp)
     ax.imshow(cm, cmap='Blues')
-    for (ii, jj), v in np.ndenumerate(cm):
+    for (ii,jj), v in np.ndenumerate(cm):
         ax.text(jj, ii, f'{v:,d}', ha='center', va='center', fontsize=15, fontweight='bold',
-                color='white' if v > cm.max() / 2 else 'black')
-    ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
-    ax.set_xticklabels(['DOWN (0)', 'UP (1)'], fontsize=12)
-    ax.set_yticklabels(['DOWN (0)', 'UP (1)'], fontsize=12)
+                color='white' if v > cm.max()/2 else 'black')
+    ax.set_xticks([0,1]); ax.set_yticks([0,1])
+    ax.set_xticklabels(['DOWN (0)','UP (1)'], fontsize=12)
+    ax.set_yticklabels(['DOWN (0)','UP (1)'], fontsize=12)
     ax.set_xlabel('Du doan (Predicted)', fontsize=11); ax.set_ylabel('Thuc te (Actual)', fontsize=11)
-    ax.set_title(f'{mkt} — {best_name}', fontsize=13, fontweight='bold')
+    ax.set_title(f'{mkt} — XGBoost', fontsize=13, fontweight='bold')
 plt.tight_layout(); save_fig(fig, 'Hinh_4_2', '4.2')
 
-# ── Hinh 4.3: ROC Curve — Mo hinh tot nhat US va VN ───────────────────────
+# ── Hinh 4.3: ROC Curve XGBoost — US va VN ─────────────────────────────────
 print('Ve Hinh 4.3...')
 fig, axes = plt.subplots(1, 2, figsize=(13, 5))
-fig.suptitle(f'Hinh 4.3: ROC Curve — Mo hinh tot nhat\nUS: {best_us_name}  |  VN: {best_vn_name}',
-             fontsize=13, fontweight='bold')
-for ax, (res, rxgb, rdl, best_name, mkt, clr) in zip(axes, [
-    (res_us, res_us_xgb, res_us_dl, best_us_name, 'US', 'darkorange'),
-    (res_vn, res_vn_xgb, res_vn_dl, best_vn_name, 'VN', '#16A34A'),
-]):
-    yt, _, yprb, _, _, _ = get_model_eval_data(res, rxgb, rdl, best_name)
+fig.suptitle('Hinh 4.3: ROC Curve — XGBoost (US va VN)', fontsize=14, fontweight='bold')
+for ax, (rxgb, mkt, clr) in zip(axes, [(res_us_xgb,'US','darkorange'), (res_vn_xgb,'VN','#16A34A')]):
+    yt   = np.asarray(rxgb['y_ts']).astype(int)
+    Xsc  = rxgb['scaler'].transform(rxgb['df_ts'][rxgb['features']].values.astype(np.float64))
+    yprb = rxgb['model'].predict_proba(Xsc)[:, 1]
     fpr, tpr, _ = roc_curve(yt, yprb)
     auc_val = sk_auc(fpr, tpr)
     ax.plot(fpr, tpr, color=clr, lw=2.5, label=f'ROC (AUC = {auc_val:.4f})')
-    ax.plot([0, 1], [0, 1], 'k--', lw=1.5, label='Random (AUC = 0.50)')
+    ax.plot([0,1],[0,1], 'k--', lw=1.5, label='Random (AUC = 0.50)')
     ax.fill_between(fpr, tpr, alpha=0.15, color=clr)
-    ax.set_xlim([0, 1]); ax.set_ylim([0, 1.02])
+    ax.set_xlim([0,1]); ax.set_ylim([0,1.02])
     ax.set_xlabel('False Positive Rate', fontsize=12); ax.set_ylabel('True Positive Rate', fontsize=12)
-    ax.set_title(f'{mkt} — ROC Curve ({best_name})', fontsize=13, fontweight='bold')
+    ax.set_title(f'{mkt} — ROC Curve', fontsize=13, fontweight='bold')
     ax.legend(loc='lower right', fontsize=11); ax.grid(True, alpha=0.3)
 plt.tight_layout(); save_fig(fig, 'Hinh_4_3', '4.3')
 
@@ -3375,7 +3237,7 @@ med = np.median(s_us)
 cbars = ['#1D4ED8' if v >= med else '#93C5FD' for v in s_us]
 bars = ax.barh(n_us, s_us, color=cbars, alpha=0.9)
 for bar, val in zip(bars, s_us):
-    ax.text(bar.get_width() + 0.0003, bar.get_y() + bar.get_height() / 2,
+    ax.text(bar.get_width() + 0.0003, bar.get_y() + bar.get_height()/2,
             f'{val:.4f}', va='center', fontsize=9)
 ax.set_title('Hinh 4.4: Feature Importance — Random Forest US (Top 15)', fontsize=13, fontweight='bold')
 ax.set_xlabel('Importance', fontsize=12); ax.tick_params(axis='y', labelsize=11)
@@ -3391,21 +3253,22 @@ med = np.median(s_vn)
 cbars = ['#15803D' if v >= med else '#86EFAC' for v in s_vn]
 bars = ax.barh(n_vn, s_vn, color=cbars, alpha=0.9)
 for bar, val in zip(bars, s_vn):
-    ax.text(bar.get_width() + 0.0003, bar.get_y() + bar.get_height() / 2,
+    ax.text(bar.get_width() + 0.0003, bar.get_y() + bar.get_height()/2,
             f'{val:.4f}', va='center', fontsize=9)
 ax.set_title('Hinh 4.5: Feature Importance — Random Forest VN (Top 15)', fontsize=13, fontweight='bold')
 ax.set_xlabel('Importance', fontsize=12); ax.tick_params(axis='y', labelsize=11)
 ax.grid(True, alpha=0.3, axis='x')
 plt.tight_layout(); save_fig(fig, 'Hinh_4_5', '4.5')
 
-# ── Hinh 4.6: Backtest Equity Curve — US (mo hinh tot nhat) ─────────────────
+# ── Hinh 4.6: Backtest Equity Curve — US ────────────────────────────────────
 print('Ve Hinh 4.6...')
-pred_us = _equity_preds_pd(res_us, res_us_xgb, res_us_dl, best_us_name)
+pred_us = (res_us['predictions']['RF']
+           .select('time','close','next_close','label','prediction').toPandas())
 pred_us['time'] = pd.to_datetime(pred_us['time'])
 pred_us = pred_us.sort_values('time').reset_index(drop=True)
-pred_us['act']   = (pred_us['next_close'] - pred_us['close']) / pred_us['close']
-pred_us['strat'] = pred_us.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
-d_us = pred_us.groupby('time')[['act', 'strat']].mean().reset_index()
+pred_us['act']  = (pred_us['next_close'] - pred_us['close']) / pred_us['close']
+pred_us['strat']= pred_us.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
+d_us = pred_us.groupby('time')[['act','strat']].mean().reset_index()
 d_us['eq_bnh']   = (1 + d_us['act']).cumprod()   * 100
 d_us['eq_strat'] = (1 + d_us['strat']).cumprod() * 100
 fig, ax = plt.subplots(figsize=(14, 6))
@@ -3418,20 +3281,20 @@ ax.annotate(f'Strategy: {final_s:.0f}%', xy=(d_us['time'].iloc[-1], final_s),
             xytext=(-80, 10), textcoords='offset points', fontsize=10, color='#2563EB', fontweight='bold')
 ax.annotate(f'B&H: {final_b:.0f}%', xy=(d_us['time'].iloc[-1], final_b),
             xytext=(-60, -18), textcoords='offset points', fontsize=10, color='gray')
-ax.set_title(f'Hinh 4.6: Equity Curve — Chien luoc vs Mua & Giu (US, 2022–nay)\nMo hinh: {best_us_name}',
-             fontsize=13, fontweight='bold')
+ax.set_title('Hinh 4.6: Equity Curve — Chien luoc vs Mua & Giu (US, 2022–nay)', fontsize=13, fontweight='bold')
 ax.set_xlabel('Thoi gian', fontsize=12); ax.set_ylabel('Tang truong (%)', fontsize=12)
 ax.legend(fontsize=11); ax.grid(True, alpha=0.3)
 plt.tight_layout(); save_fig(fig, 'Hinh_4_6', '4.6')
 
-# ── Hinh 4.7: Backtest Equity Curve — VN (mo hinh tot nhat) ─────────────────
+# ── Hinh 4.7: Backtest Equity Curve — VN ────────────────────────────────────
 print('Ve Hinh 4.7...')
-pred_vn = _equity_preds_pd(res_vn, res_vn_xgb, res_vn_dl, best_vn_name)
+pred_vn = (res_vn['predictions']['RF']
+           .select('time','close','next_close','label','prediction').toPandas())
 pred_vn['time'] = pd.to_datetime(pred_vn['time'])
 pred_vn = pred_vn.sort_values('time').reset_index(drop=True)
-pred_vn['act']   = (pred_vn['next_close'] - pred_vn['close']) / pred_vn['close']
-pred_vn['strat'] = pred_vn.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
-d_vn = pred_vn.groupby('time')[['act', 'strat']].mean().reset_index()
+pred_vn['act']  = (pred_vn['next_close'] - pred_vn['close']) / pred_vn['close']
+pred_vn['strat']= pred_vn.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
+d_vn = pred_vn.groupby('time')[['act','strat']].mean().reset_index()
 d_vn['eq_bnh']   = (1 + d_vn['act']).cumprod()   * 100
 d_vn['eq_strat'] = (1 + d_vn['strat']).cumprod() * 100
 fig, ax = plt.subplots(figsize=(14, 6))
@@ -3444,8 +3307,7 @@ ax.annotate(f'Strategy: {final_s:.0f}%', xy=(d_vn['time'].iloc[-1], final_s),
             xytext=(-80, 10), textcoords='offset points', fontsize=10, color='#16A34A', fontweight='bold')
 ax.annotate(f'B&H: {final_b:.0f}%', xy=(d_vn['time'].iloc[-1], final_b),
             xytext=(-60, -18), textcoords='offset points', fontsize=10, color='gray')
-ax.set_title(f'Hinh 4.7: Equity Curve — Chien luoc vs Mua & Giu (VN, 2022–nay)\nMo hinh: {best_vn_name}',
-             fontsize=13, fontweight='bold')
+ax.set_title('Hinh 4.7: Equity Curve — Chien luoc vs Mua & Giu (VN, 2022–nay)', fontsize=13, fontweight='bold')
 ax.set_xlabel('Thoi gian', fontsize=12); ax.set_ylabel('Tang truong (%)', fontsize=12)
 ax.legend(fontsize=11); ax.grid(True, alpha=0.3)
 plt.tight_layout(); save_fig(fig, 'Hinh_4_7', '4.7')
@@ -3453,12 +3315,8 @@ plt.tight_layout(); save_fig(fig, 'Hinh_4_7', '4.7')
 # ── Hinh 4.8: Walk-Forward Accuracy theo tung nam ───────────────────────────
 print('Ve Hinh 4.8...')
 fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-fig.suptitle(f'Hinh 4.8: Walk-Forward Validation — Accuracy theo tung nam test\nUS: {best_us_name}  |  VN: {best_vn_name}',
-             fontsize=13, fontweight='bold')
-for ax, (wfr, mkt, clr, best_name) in zip(axes, [
-    (wf_us, 'US', '#2563EB', best_us_name),
-    (wf_vn, 'VN', '#16A34A', best_vn_name),
-]):
+fig.suptitle('Hinh 4.8: Walk-Forward Validation — Accuracy theo tung nam test', fontsize=13, fontweight='bold')
+for ax, (wfr, mkt, clr) in zip(axes, [(wf_us,'US','#2563EB'), (wf_vn,'VN','#16A34A')]):
     if not wfr: ax.set_title(f'{mkt}: no data'); continue
     yrs  = [r['test_year'] for r in wfr]
     accs = [r['accuracy']  for r in wfr]
@@ -3470,9 +3328,9 @@ for ax, (wfr, mkt, clr, best_name) in zip(axes, [
     ax.axhline(mean_acc, color=clr, ls='--', lw=1, alpha=0.5, label=f'Trung binh={mean_acc:.3f}')
     ax.fill_between(yrs, 0.5, accs, alpha=0.1, color=clr)
     for yr, ac in zip(yrs, accs):
-        ax.annotate(f'{ac:.3f}', (yr, ac), textcoords='offset points', xytext=(0, 10),
+        ax.annotate(f'{ac:.3f}', (yr, ac), textcoords='offset points', xytext=(0,10),
                     ha='center', fontsize=10, fontweight='bold')
-    ax.set_title(f'{mkt} — Walk-Forward ({best_name})', fontsize=12, fontweight='bold')
+    ax.set_title(f'{mkt} — Walk-Forward (XGBoost)', fontsize=12, fontweight='bold')
     ax.set_xlabel('Nam kiem tra', fontsize=12); ax.set_ylabel('Score', fontsize=12)
     ax.set_ylim(0.42, 0.74); ax.legend(fontsize=10); ax.grid(True, alpha=0.3)
 plt.tight_layout(); save_fig(fig, 'Hinh_4_8', '4.8')
@@ -3488,25 +3346,25 @@ try:
     dk = df_aa.dropna(subset=['nx']).copy()
     ok = dk['prediction'] == dk['ad']
     fig, ax = plt.subplots(figsize=(14, 6))
-    for i in range(len(dk) - 1):
-        r = dk.iloc[i]; c = 'green' if r['prediction'] == 1 else 'red'; a = 0.9 if ok.iloc[i] else 0.3
-        ax.plot([dk['time'].iloc[i], dk['time'].iloc[i+1]], [r['close'], dk['close'].iloc[i+1]], color=c, lw=2, alpha=a)
+    for i in range(len(dk)-1):
+        r = dk.iloc[i]; c = 'green' if r['prediction']==1 else 'red'; a = 0.9 if ok.iloc[i] else 0.3
+        ax.plot([dk['time'].iloc[i],dk['time'].iloc[i+1]], [r['close'],dk['close'].iloc[i+1]], color=c, lw=2, alpha=a)
         if not ok.iloc[i]: ax.scatter(r['time'], r['close'], marker='D', s=50, color=c, zorder=5)
     last = df_aa.iloc[-1]; pd_dir = int(last['prediction'])
-    pd_lbl = 'TANG (UP)' if pd_dir == 1 else 'GIAM (DOWN)'; pd_c = 'green' if pd_dir == 1 else 'red'
+    pd_lbl = 'TANG (UP)' if pd_dir==1 else 'GIAM (DOWN)'; pd_c = 'green' if pd_dir==1 else 'red'
     ax.scatter(last['time'], last['close'], marker='*', s=400, color='gold', zorder=10, edgecolors='black')
-    ax.annotate(f'Du bao ngay mai: {pd_lbl}', xy=(last['time'], last['close']),
-                xytext=(0, 22), textcoords='offset points', ha='center', fontsize=11,
+    ax.annotate(f'Du bao ngay mai: {pd_lbl}', xy=(last['time'],last['close']),
+                xytext=(0,22), textcoords='offset points', ha='center', fontsize=11,
                 fontweight='bold', color=pd_c,
                 bbox=dict(boxstyle='round,pad=0.4', fc='lightyellow', ec=pd_c))
-    acc_aa = ok.mean() * 100
-    ax.set_title(f'Hinh 5.1: Du bao xu huong AAPL (US) — Thang {date.today().month}/{date.today().year}\nMo hinh: {best_us_name}  |  Accuracy lich su: {acc_aa:.1f}%',
+    acc_aa = ok.mean()*100
+    ax.set_title(f'Hinh 5.1: Du bao xu huong AAPL (US) — Thang {date.today().month}/{date.today().year}\nAccuracy lich su: {acc_aa:.1f}%',
                  fontsize=13, fontweight='bold')
     ax.set_xlabel('Ngay', fontsize=12); ax.set_ylabel('Gia dong cua (USD)', fontsize=12)
     ax.tick_params(axis='x', rotation=30); ax.grid(True, alpha=0.3)
     up_p = mpatches.Patch(color='green', label='Du doan TANG'); dn_p = mpatches.Patch(color='red', label='Du doan GIAM')
     er_p = mpatches.Patch(facecolor='gray', alpha=0.4, label='Sai'); st_p = mpatches.Patch(color='gold', label='Du bao ngay mai')
-    ax.legend(handles=[up_p, dn_p, er_p, st_p], fontsize=10)
+    ax.legend(handles=[up_p,dn_p,er_p,st_p], fontsize=10)
     plt.tight_layout(); save_fig(fig, 'Hinh_5_1', '5.1')
 except Exception as e:
     print(f'  Hinh 5.1 bo qua (chua chay cell du bao): {e}')
@@ -3515,26 +3373,26 @@ except Exception as e:
 print('Ve Hinh 5.2...')
 try:
     fig, axes = plt.subplots(1, 2, figsize=(16, 6))
-    fig.suptitle(f'Hinh 5.2: Du bao xu huong VCB va FPT (VN) — Thang {date.today().month}/{date.today().year}\nMo hinh: {best_vn_name}',
+    fig.suptitle(f'Hinh 5.2: Du bao xu huong VCB va FPT (VN) — Thang {date.today().month}/{date.today().year}',
                  fontsize=13, fontweight='bold')
-    for ax, sym in zip(axes, ['VCB', 'FPT']):
+    for ax, sym in zip(axes, ['VCB','FPT']):
         df_s = demo_results[sym].copy()
         df_s['time'] = pd.to_datetime(df_s['time'])
         df_s = df_s[df_s['time'] >= pd.Timestamp(DEMO_START)].reset_index(drop=True)
         df_s['nx'] = df_s['close'].shift(-1)
         df_s['ad'] = (df_s['nx'] > df_s['close']).astype('Int64')
         dk = df_s.dropna(subset=['nx']).copy(); ok = dk['prediction'] == dk['ad']
-        for i in range(len(dk) - 1):
-            r = dk.iloc[i]; c = 'green' if r['prediction'] == 1 else 'red'; a = 0.9 if ok.iloc[i] else 0.3
-            ax.plot([dk['time'].iloc[i], dk['time'].iloc[i+1]], [r['close'], dk['close'].iloc[i+1]], color=c, lw=2, alpha=a)
-            if not ok.iloc[i]: ax.scatter(r['time'], r['close'], marker='D', s=45, color=c, zorder=5)
+        for i in range(len(dk)-1):
+            r = dk.iloc[i]; c = 'green' if r['prediction']==1 else 'red'; a = 0.9 if ok.iloc[i] else 0.3
+            ax.plot([dk['time'].iloc[i],dk['time'].iloc[i+1]], [r['close'],dk['close'].iloc[i+1]], color=c, lw=2, alpha=a)
+            if not ok.iloc[i]: ax.scatter(r['time'],r['close'],marker='D',s=45,color=c,zorder=5)
         last = df_s.iloc[-1]; pd_dir = int(last['prediction'])
-        pd_lbl = 'TANG' if pd_dir == 1 else 'GIAM'; pd_c = 'green' if pd_dir == 1 else 'red'
-        ax.scatter(last['time'], last['close'], marker='*', s=350, color='gold', zorder=10, edgecolors='black')
-        ax.annotate(f'Ngay mai: {pd_lbl}', xy=(last['time'], last['close']),
-                    xytext=(0, 18), textcoords='offset points', ha='center', fontsize=10,
-                    fontweight='bold', color=pd_c, bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow', ec=pd_c))
-        acc_s = ok.mean() * 100
+        pd_lbl = 'TANG' if pd_dir==1 else 'GIAM'; pd_c = 'green' if pd_dir==1 else 'red'
+        ax.scatter(last['time'],last['close'],marker='*',s=350,color='gold',zorder=10,edgecolors='black')
+        ax.annotate(f'Ngay mai: {pd_lbl}', xy=(last['time'],last['close']),
+                    xytext=(0,18), textcoords='offset points', ha='center', fontsize=10,
+                    fontweight='bold', color=pd_c, bbox=dict(boxstyle='round,pad=0.3',fc='lightyellow',ec=pd_c))
+        acc_s = ok.mean()*100
         ax.set_title(f'{sym} — Acc lich su: {acc_s:.1f}%', fontsize=12, fontweight='bold')
         ax.set_xlabel('Ngay', fontsize=11); ax.set_ylabel('Gia dong cua (VND)', fontsize=11)
         ax.tick_params(axis='x', rotation=30); ax.grid(True, alpha=0.3)
@@ -3543,15 +3401,15 @@ except Exception as e:
     print(f'  Hinh 5.2 bo qua (chua chay cell du bao): {e}')
 
 # ── Tong ket ─────────────────────────────────────────────────────────────────
-print('\n' + '=' * 60)
-print(f'HOAN TAT! Mo hinh tot nhat: US={best_us_name} | VN={best_vn_name}')
-print('Tat ca hinh da luu vao: figures/')
-print('=' * 60)
-for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
-           'Hinh_4_6', 'Hinh_4_7', 'Hinh_4_8', 'Hinh_5_1', 'Hinh_5_2']:
+print('\n' + '='*60)
+print('HOAN TAT! Tat ca hinh da luu vao: figures/')
+print('='*60)
+for fn in ['Hinh_4_1','Hinh_4_2','Hinh_4_3','Hinh_4_4','Hinh_4_5',
+           'Hinh_4_6','Hinh_4_7','Hinh_4_8','Hinh_5_1','Hinh_5_2']:
     fp = f'figures/{fn}.png'
-    size = os.path.getsize(fp) / 1024 if os.path.exists(fp) else 0
+    size = os.path.getsize(fp)/1024 if os.path.exists(fp) else 0
     print(f'  {fn}.png  ({size:.0f} KB)')
+
 ```
 
     Ve Hinh 4.1...
@@ -3559,7 +3417,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_1.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_1.png)
     
 
 
@@ -3569,7 +3427,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_3.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_3.png)
     
 
 
@@ -3579,7 +3437,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_5.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_5.png)
     
 
 
@@ -3589,7 +3447,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_7.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_7.png)
     
 
 
@@ -3599,7 +3457,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_9.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_9.png)
     
 
 
@@ -3609,18 +3467,17 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_11.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_11.png)
     
 
 
       Saved: figures/Hinh_4_6.png
     Ve Hinh 4.7...
-      [Note] GRU chua co df_ts_pd -> dung XGBoost data cho equity curve
     
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_13.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_13.png)
     
 
 
@@ -3630,7 +3487,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_15.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_15.png)
     
 
 
@@ -3640,7 +3497,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_17.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_17.png)
     
 
 
@@ -3650,104 +3507,23 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_19.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_47_19.png)
     
 
 
       Saved: figures/Hinh_5_2.png
     
     ============================================================
-    HOAN TAT! Mo hinh tot nhat: US=GBT | VN=GRU
-    Tat ca hinh da luu vao: figures/
+    HOAN TAT! Tat ca hinh da luu vao: figures/
     ============================================================
-      Hinh_4_1.png  (108 KB)
+      Hinh_4_1.png  (110 KB)
       Hinh_4_2.png  (74 KB)
-      Hinh_4_3.png  (157 KB)
-      Hinh_4_4.png  (123 KB)
-      Hinh_4_5.png  (124 KB)
-      Hinh_4_6.png  (206 KB)
-      Hinh_4_7.png  (136 KB)
-      Hinh_4_8.png  (149 KB)
-      Hinh_5_1.png  (133 KB)
-      Hinh_5_2.png  (188 KB)
+      Hinh_4_3.png  (155 KB)
+      Hinh_4_4.png  (122 KB)
+      Hinh_4_5.png  (127 KB)
+      Hinh_4_6.png  (190 KB)
+      Hinh_4_7.png  (152 KB)
+      Hinh_4_8.png  (170 KB)
+      Hinh_5_1.png  (132 KB)
+      Hinh_5_2.png  (181 KB)
     
-
-## PHẦN CUỐI: TỔNG HỢP TẤT CẢ CẢI TIẾN
-
-### Các cải tiến đã thực hiện:
-
-| # | Cải tiến | Mô tả |
-|---|----------|-------|
-| 1 | **Ngưỡng label thống nhất** | Cả US & VN dùng `next-day ±1.5%` (chọn sau thực nghiệm 8 cấu hình). VN edge +7.3%, US edge +0.8% |
-| 2 | **Features kỹ thuật cơ bản** | MA5/10/20/50, price_vs_ma5/20/50, Bollinger Bands (upper/lower/mid/bandwidth/%B), ATR(14), ATR ratio |
-| 3 | **Features dao động (oscillator)** | RSI(7), RSI(14), Stochastic %K, Williams %R, CCI(14), Momentum 5/10d |
-| 4 | **Features xu hướng & biến động** | MACD, MACD signal, MACD histogram, ADX(14), Volatility 5d/10d/20d |
-| 5 | **Features Volume** | log_volume, log_lag1_volume, volume_change, volume_ma_ratio, OBV signal |
-| 6 | **Features đặc thù thị trường VN** | limit_hit_rate (±7%), zero_change_rate, vol_consistency, intraday_pos, ato_gap |
-| 7 | **Features context thị trường** | sector_idx (11 nhóm ngành), vni_ret1d, vni_mom5, vni_ma_ratio (từ VN-Index) |
-| 8 | **Lag features đa khung thời gian** | lag1/2/3/5/10_return, lag1/2/3_close, lag1_volume – **tổng 43 features** |
-| 9 | **Tách thị trường US vs VN** | Pipeline + scaler + class weight riêng cho mỗi thị trường – tránh data leakage |
-| 10 | **Winsorize outliers** | Cắt extreme values trên 12 features (returns, momentum, volume) trước khi train |
-| 11 | **StandardScaler** | Chuẩn hóa features (mean=0, std=1) – Logistic Regression hội tụ tốt hơn |
-| 12 | **Log-transform Volume** | `log1p(volume)` – giảm skew phân phối, ổn định thang đo |
-| 13 | **Class Weighting** | Cân bằng nhãn 0/1 cho LR, RF, GBT, SVC, XGBoost, LSTM, GRU |
-| 14 | **7 model Spark ML & sklearn** | Logistic Regression, Random Forest, GBT, LinearSVC (Spark ML) + XGBoost (sklearn) |
-| 15 | **MACD – EMA thực** | `ewm(span=12)` & `ewm(span=26)` trong pipeline XGBoost + LSTM/GRU (Spark dùng SMA proxy) |
-| 16 | **XGBoost** | Gradient Boosting chuẩn công nghiệp (sklearn/XGBoost), 400 trees, scale_pos_weight cho imbalance |
-| 17 | **LSTM + GRU (Học sâu)** | 2-layer RNN với Dropout 0.3, EarlyStopping, ReduceLROnPlateau – chuỗi 20 ngày/ticker |
-| 18 | **Time-series Split** | Train: year ≤ 2021 – Test: year ≥ 2022 (đúng nguyên tắc time-series, không leak tương lai) |
-| 19 | **Backtest chiến lược** | Mô phỏng mua khi RF dự đoán UP, so sánh Strategy Return vs Buy & Hold |
-| 20 | **Demo dự báo thực tế** | Lấy data Apr–May 2026 từ yfinance, dự báo bằng model tốt nhất, vẽ biểu đồ trực quan |
-
-### Tổng số models đã train: **7 models × 2 thị trường = 14 lượt training**
-- **Spark ML** (4): Logistic Regression, Random Forest, GBT, LinearSVC
-- **sklearn/XGBoost** (1): XGBoost
-- **Deep Learning** (2): LSTM, GRU (Keras/TensorFlow)
-
-### Pipeline tổng thể:
-```
-Dữ liệu thô (39 mã: 18 US + 21 VN, ~10 năm 2013–2026)
-  ↓ PySpark Feature Engineering (43 features qua Window Functions)
-  ↓ Winsorize outliers + Drop nulls
-  ↓ Tách US vs VN (ngưỡng label, label horizon riêng)
-  ↓ StandardScaler + Class Weighting + Time-series Split (train≤2021, test≥2022)
-  ├─ Spark ML: LR / RF / GBT / LinearSVC
-  ├─ Pandas/sklearn: XGBoost (EMA MACD thực)
-  └─ Keras/TensorFlow: LSTM / GRU (sequence 20 ngày/ticker)
-       ↓
-  So sánh 7 models × 2 thị trường → Backtest chiến lược → Demo dự báo Apr-May 2026
-```
-
-
-
-## PHẦN KẾT LUẬN: TỔNG KẾT, HẠN CHẾ & HƯỚNG PHÁT TRIỂN
-
-### 1. Kết luận chính
-
-| # | Phát hiện | Bằng chứng |
-|---|-----------|------------|
-| 1 | **VN dự báo được tốt hơn US** | VN: acc ~55%, AUC ~0.58 (RF) — US: acc ~53%, AUC ~0.53 (Ensemble) |
-| 2 | **Backtest VN vượt xa Buy&Hold** | VN: Strategy ~1947% vs B&H ~919% (+1028%) — US: Strategy thua nhẹ B&H |
-| 3 | **Minh chứng Efficient Market Hypothesis** | US (thị trường phát triển) hiệu quả → khó dự báo; VN (mới nổi) kém hiệu quả → còn alpha |
-| 4 | **Tree-based > Deep Learning trên tabular** | RF/XGBoost (0.53-0.55) > LSTM/GRU (0.50-0.53) ở cả 2 thị trường |
-| 5 | **PySpark xử lý hiệu quả 150k+ dòng** | Window Functions tính 43 features song song theo từng ticker |
-
-### 2. Bài học về Data Leakage (research integrity)
-
-Ban đầu model US đạt accuracy ~84% (AUC 0.93) — nhưng đây là **data leakage**: dùng VN-Index features cho cổ phiếu US (không có quan hệ nhân quả). Sau khi **tách feature list riêng** (US dùng S&P500 context, VN dùng VN-Index), accuracy về mức honest ~53%. **Con số thấp hơn nhưng đúng đắn về mặt khoa học.**
-
-### 3. Hạn chế
-
-- **Backtest chưa tính phí giao dịch & slippage** (~0.1-0.15%/lệnh) → lợi nhuận thực tế sẽ thấp hơn
-- **Survivorship bias**: chỉ dùng các mã đang niêm yết, bỏ sót mã đã hủy niêm yết
-- **MACD trong Spark dùng SMA proxy** (đã fix bằng EMA thực trong pipeline XGBoost/DL)
-- **Chỉ 1 lần train/test split** theo thời gian (chưa walk-forward đa fold)
-- **Chưa dùng dữ liệu phi cấu trúc**: tin tức, sentiment, báo cáo tài chính
-
-### 4. Hướng phát triển
-
-- Thêm **phí giao dịch** vào backtest để đánh giá lợi nhuận ròng
-- **Walk-forward validation** nhiều fold để kiểm tra độ ổn định theo thời gian
-- Tích hợp **sentiment analysis** từ tin tức/mạng xã hội
-- Thử **mô hình chuỗi thời gian chuyên biệt** (Temporal Fusion Transformer, N-BEATS)
-- Mở rộng sang **dự báo đa bước** (multi-step) thay vì chỉ next-day
