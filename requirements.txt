@@ -1,14 +1,14 @@
 # Data collection
 yfinance==1.4.0
-vnstock 
+vnstock==4.0.0
 
 # Data processing
-numpy==2.4.5
+numpy==2.4.6
 pandas==3.0.3
 scipy==1.17.1
 
 # Big Data
-pyspark==4.1.1
+pyspark==4.1.2
 
 # Machine Learning
 scikit-learn==1.8.0

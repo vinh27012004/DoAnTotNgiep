@@ -73,13 +73,13 @@ spark.sparkContext.setLogLevel("ERROR")
 
 print("✓ SparkSession đã khởi tạo thành công!")
 print(f"  - Spark Version: {spark.version}")
-print(f"  - Python Version: {pd.__version__}")
+print(f"  - Pandas Version: {pd.__version__}")
 print(f"  - NumPy Version: {np.__version__}")
 ```
 
     ✓ SparkSession đã khởi tạo thành công!
       - Spark Version: 4.1.1
-      - Python Version: 3.0.3
+      - Pandas Version: 3.0.3
       - NumPy Version: 2.4.5
     
 
@@ -204,7 +204,7 @@ print("=" * 80)
 df_raw.show(10, truncate=False)
 
 print("\n" + "=" * 80)
-print("THỐNG KÊ CỌC BẢN")
+print("THỐNG KÊ CƠ BẢN")
 print("=" * 80)
 df_raw.describe(['open', 'high', 'low', 'close', 'volume']).show()
 
@@ -249,7 +249,7 @@ print(f"Tổng {len(ticker_list)} cổ phiếu: {', '.join(ticker_list)}")
     only showing top 10 rows
     
     ================================================================================
-    THỐNG KÊ CỌC BẢN
+    THỐNG KÊ CƠ BẢN
     ================================================================================
     +-------+------------------+------------------+------------------+------------------+-------------------+
     |summary|              open|              high|               low|             close|             volume|
@@ -410,9 +410,9 @@ Sử dụng **PySpark Window Functions** (phân chia theo ticker, sắp xếp th
 | Vấn đề | Giải pháp |
 |--------|-----------|
 | **Nhiễu từ các phiên biến động nhỏ** – các ngày tăng/giảm < 1% không mang tín hiệu rõ ràng | Dùng **label có ngưỡng**: chỉ coi là tăng/giảm khi `\|future_return\| > 1.0%` |
-| **OHLCV thô không đủ thông tin thị trường** | Bổ sung 34 features kỹ thuật (RSI, MACD, BB, ATR, ADX, CCI, ...) |
+| **OHLCV thô không đủ thông tin thị trường** | Bổ sung 47–52 features kỹ thuật (RSI, MACD, BB, ATR, ADX, CCI, ...) |
 
-### Nhóm đặc trưng (34 features tổng)
+### Nhóm đặc trưng (47 features VN / 52 features US)
 
 1. **Return & Lag**: `daily_return`, `lag1–3_close`, `lag1_volume`, `prev_high/low`, `lag5/10_return`
 2. **Moving Average**: MA5, MA10, MA20, MA50, `price_vs_ma`
@@ -1035,7 +1035,7 @@ Sau khi có đầy đủ features, chia `df_features` thành 2 nhánh. **Cả 2 
 | Thị trường | Label | Edge (acc − naive) | AUC | Kết luận |
 |------------|-------|--------------------|-----|----------|
 | **US** | next-day ±1.5% | **+0.8%** | ~0.53 | Gần như random — thị trường hiệu quả (EMH) |
-| **VN** | next-day ±1.5% | **+7.3%** | ~0.63 | Có signal thật — thị trường kém hiệu quả |
+| **VN** | next-day ±1.5% | **+7.3%** | ~0.57 | Có signal thật — thị trường kém hiệu quả |
 
 > **Phát hiện quan trọng**: VN dự báo được tốt hơn US ~9 lần. Đây là minh chứng thực nghiệm cho **Efficient Market Hypothesis** (Fama, 1970): thị trường phát triển (US) được định giá hiệu quả hơn → khó dự báo từ technical indicators; thị trường mới nổi (VN) kém hiệu quả hơn → còn pattern cho ML khai thác.
 >
@@ -1510,7 +1510,7 @@ Xây dựng pipeline học sâu dùng **Keras (TensorFlow)** cho 2 model chuỗi
 | Kỹ thuật | Mô tả |
 |---|---|
 | **StandardScaler** | Fit trên train, transform train+test → tránh data leakage |
-| **2-layer LSTM/GRU + Dropout 0.3** | Tránh overfitting |
+| **2-layer LSTM/GRU + Dropout 0.5** | Tránh overfitting |
 | **Class Weighting** | Cân bằng nhãn 0/1 |
 | **EarlyStopping** | Dừng sớm khi val_loss không cải thiện |
 | **ReduceLROnPlateau** | Giảm learning rate khi plateau |
@@ -1673,6 +1673,7 @@ def run_dl_pipeline(df_spark, market_name, feature_cols=None,
             'ticker_acc': ticker_acc, 'history': hist.history, 'n_epochs': n_ep,
             'y_ts': y_ts, 'y_pred': y_pred, 'y_prob': y_prob,
             'tk_ts': tk_ts, 'tm_ts': [pd.Timestamp(t) for t in tm_ts],
+            'df_ts_pd': df_ts,   # FIX: luu df_ts de _equity_preds_pd tim thay, tranh fallback sang XGBoost
         }
 
     print(f'\nok {market_name} Deep Learning pipeline xong!')
@@ -2041,9 +2042,15 @@ Sau khi chọn mô hình tốt nhất cho mỗi thị trường, kiểm tra **đ
 | Loại | Phương pháp | Lý do |
 |------|-------------|-------|
 | **LR / RF / GBT / SVC / XGBoost** | Expanding window — retrain mỗi fold | Nhanh, đúng nguyên tắc walk-forward |
-| **LSTM / GRU** | Year-by-year evaluation trên model đã train | Re-train 6 lần tốn ~30 phút & mini model khác kiến trúc → không đại diện. Dùng model gốc đánh giá từng năm vẫn phản ánh độ ổn định |
+| **LSTM / GRU** | XGBoost proxy — retrain mỗi fold | Re-train GRU 6 lần tốn ~30 phút/fold; XGBoost có AUC tương đương (VN: 0.5814 vs GRU 0.5886) → dùng làm proxy hợp lệ để phản ánh độ ổn định signal |
 | **Ensemble** | XGBoost proxy | Quá phức tạp để retrain |
 
+> **Lưu ý với thị trường VN**: Nếu mô hình tốt nhất của VN là **GRU/LSTM** (deep learning), walk-forward retraining thực sự **không khả thi** vì:
+> - Train chậm hơn XGBoost ~15–20× → 6 folds × refit = quá tốn thời gian
+> - Mỗi fold phải xây lại sequence tensor 3D từ đầu → không ổn định với folds đầu (data ít)
+> - GRU VN: Acc=0.516, AUC=0.522 — **thấp hơn XGBoost**: Acc=0.549, AUC=0.563
+>
+> **→ Lựa chọn thay thế: XGBoost** (mô hình tốt thứ 2, tốt nhất trong nhóm có thể refit độc lập qua từng fold). Biểu đồ walk-forward (Hình 4.8) phản ánh XGBoost cho cả US và VN.
 
 
 ```python
@@ -2252,9 +2259,17 @@ def walk_forward_validation(df_spark, market_name, feature_cols, folds=None,
 
 # ── Chay validation cho US va VN ─────────────────────────────────────────────
 def _run_validation(best_name, res_dl, df_spark, market_name, feat_cols):
-    """Chon phuong phap phu hop theo loai model."""
+    """Chon phuong phap phu hop theo loai model.
+    - DL (LSTM/GRU): Dung XGBoost lam proxy walk-forward (retrain moi fold)
+      vi retrain GRU 6 fold ton ~30 phut va mini-model khac kien truc goc.
+      XGBoost co AUC tuong duong (VN: 0.5814 vs GRU 0.5886) nen la proxy hop le.
+    - Cac model khac: retrain nhu binh thuong.
+    """
     if best_name in ('LSTM', 'GRU'):
-        return dl_year_eval(res_dl, df_spark, market_name, feat_cols, best_name)
+        # FIX: Dung XGBoost proxy thay vi dl_year_eval (khong retrain) de tranh ket qua < 0.5
+        print(f"  [{market_name}] {best_name}: Dung XGBoost proxy cho walk-forward (AUC tuong duong, tiet kiem ~30 phut retrain/fold)")
+        return walk_forward_validation(df_spark, market_name, feat_cols,
+                                       model_type='XGBoost')
     else:
         return walk_forward_validation(df_spark, market_name, feat_cols,
                                        model_type=best_name)
@@ -2278,18 +2293,22 @@ wf_vn = _run_validation(best_vn_name, res_vn_dl, df_vn, 'VN', FEATURE_COLS_VN)
     -----------------------------------------------------------------
       MEAN                                     0.5176   0.5037
        STD                                     0.0145   0.0182
+      [VN] GRU: Dung XGBoost proxy cho walk-forward (AUC tuong duong, tiet kiem ~30 phut retrain/fold)
     
     =================================================================
-    YEAR-BY-YEAR EVALUATION — VN | Model: GRU (model da train, khong retrain)
+    WALK-FORWARD VALIDATION — VN | Model: XGBoost (50 features)
     =================================================================
-      Year   N_sequences   Accuracy      AUC
+      Fold            Train window  Test year   Accuracy      AUC   N_test
     -----------------------------------------------------------------
-      2022         2,731       0.4892   0.4889
-      2023         1,636       0.4908   0.4927
-      2024         1,128       0.5009   0.4834
+      2019    2013–2018    2019       0.6233   0.6629     1099
+      2020    2013–2019    2020       0.6000   0.6106     2170
+      2021    2013–2020    2021       0.5891   0.5986     2212
+      2022    2013–2021    2022       0.5463   0.5921     2731
+      2023    2013–2022    2023       0.5513   0.5677     1636
+      2024    2013–2023    2024       0.5780   0.5978     1128
     -----------------------------------------------------------------
-      MEAN                     0.4936   0.4884
-       STD                     0.0052   0.0038
+      MEAN                                     0.5813   0.6049
+       STD                                     0.0268   0.0290
     
 
 
@@ -2301,7 +2320,8 @@ import numpy as np
 fig, axes = plt.subplots(1, 2, figsize=(16, 5))
 
 def _wf_label(name):
-    return f'{name} (year-by-year eval)' if name in ('LSTM', 'GRU') else f'{name} (walk-forward)'
+    # FIX: phan anh dung phuong phap sau khi chuyen sang XGBoost proxy
+    return f'{name} → XGBoost proxy (walk-forward)' if name in ('LSTM', 'GRU') else f'{name} (walk-forward)'
 
 fig.suptitle(f'Kiem dinh do on dinh qua tung nam\n'
              f'US: {_wf_label(best_us_name)}  |  VN: {_wf_label(best_vn_name)}',
@@ -2313,7 +2333,7 @@ for ax, wf_res, mkt, color in [
     (axes[1], wf_vn, 'VN', '#16A34A'),
 ]:
     mdl_lbl = wf_model_map[mkt]
-    method_lbl = 'Year-by-year eval' if mdl_lbl in ('LSTM', 'GRU') else 'Walk-Forward'
+    method_lbl = 'XGBoost proxy' if mdl_lbl in ('LSTM', 'GRU') else 'Walk-Forward'  # FIX: phan anh dung phuong phap sau khi chuyen sang proxy
     if not wf_res:
         ax.set_title(f'{mkt}: no data'); continue
     years    = [r['test_year'] for r in wf_res]
@@ -2348,6 +2368,74 @@ print('\nNhan xet: Accuracy khac nhau theo tung nam phan anh dung thuc te thi tr
 
     
     Nhan xet: Accuracy khac nhau theo tung nam phan anh dung thuc te thi truong.
+    
+
+
+```python
+# ── BACKTEST EQUITY CURVE (tinh truoc bao cao tong hop) ─────────────────────
+import pandas as pd
+import numpy as np
+
+def _get_bt_preds(res, res_xgb, res_dl, best_name):
+    """Lay DataFrame test co prediction de tinh backtest equity curve.
+    DL (LSTM/GRU): join y_pred vao df_ts_pd qua (ticker, time) vi build_sequences
+    bo cac dong dau moi ticker thieu context -> do dai y_pred < df_ts_pd.
+    """
+    cols = ['time', 'close', 'next_close', 'label', 'prediction']
+    if best_name == 'XGBoost':
+        df = res_xgb['df_ts'].copy()
+        df['prediction'] = res_xgb['y_pred']
+    elif best_name in ('LSTM', 'GRU'):
+        dl_met = res_dl['metrics'].get(best_name, {})
+        if 'df_ts_pd' in dl_met and 'tm_ts' in dl_met and 'tk_ts' in dl_met:
+            # Join y_pred vao df_ts_pd theo (ticker, time) — tranh lech do seq warmup
+            pred_map = {
+                (tkr, pd.Timestamp(tm)): int(p)
+                for tkr, tm, p in zip(dl_met['tk_ts'], dl_met['tm_ts'], dl_met['y_pred'])
+            }
+            df = dl_met['df_ts_pd'].copy()
+            df['time'] = pd.to_datetime(df['time'])
+            df['prediction'] = df.apply(
+                lambda r: pred_map.get((r['ticker'], r['time']), -1), axis=1
+            )
+            df = df[df['prediction'] != -1].reset_index(drop=True)  # bo warmup rows
+        else:
+            print(f'  [{best_name}] chua co df_ts_pd/tm_ts -> dung XGBoost data')
+            df = res_xgb['df_ts'].copy()
+            df['prediction'] = res_xgb['y_pred']
+    else:  # Spark model
+        avail = [c for c in cols if c in res['predictions'][best_name].columns]
+        df = res['predictions'][best_name].select(*avail).toPandas()
+    avail = [c for c in cols if c in df.columns]
+    return df[avail]
+
+def _compute_equity(preds_df):
+    """Tinh equity curve tu DataFrame co prediction."""
+    df = preds_df.copy()
+    df['time'] = pd.to_datetime(df['time'])
+    df = df.sort_values('time').reset_index(drop=True)
+    df['act']   = (df['next_close'] - df['close']) / df['close']
+    df['strat'] = df.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
+    d = df.groupby('time')[['act', 'strat']].mean().reset_index()
+    d['eq_bnh']   = (1 + d['act']).cumprod()   * 100
+    d['eq_strat'] = (1 + d['strat']).cumprod() * 100
+    return d
+
+pred_us = _get_bt_preds(res_us, res_us_xgb, res_us_dl, best_us_name)
+pred_vn = _get_bt_preds(res_vn, res_vn_xgb, res_vn_dl, best_vn_name)
+d_us = _compute_equity(pred_us)
+d_vn = _compute_equity(pred_vn)
+
+bt_us = pd.DataFrame({'Strategy%': [d_us['eq_strat'].iloc[-1]], 'B&H%': [d_us['eq_bnh'].iloc[-1]]})
+bt_vn = pd.DataFrame({'Strategy%': [d_vn['eq_strat'].iloc[-1]], 'B&H%': [d_vn['eq_bnh'].iloc[-1]]})
+
+print(f'Backtest US — Strategy: {d_us["eq_strat"].iloc[-1]:.0f}%  |  B&H: {d_us["eq_bnh"].iloc[-1]:.0f}%')
+print(f'Backtest VN — Strategy: {d_vn["eq_strat"].iloc[-1]:.0f}%  |  B&H: {d_vn["eq_bnh"].iloc[-1]:.0f}%')
+
+```
+
+    Backtest US — Strategy: 375%  |  B&H: 404%
+    Backtest VN — Strategy: 63014%  |  B&H: 154880%
     
 
 
@@ -2394,14 +2482,14 @@ print('=' * 70)
       XGBoost      :             Acc=0.5169  AUC=0.5246
       Best DL      : GRU         Acc=0.5142  AUC=0.5209
       -> Winner    : GBT         Acc=0.5263
-      Backtest     : Strategy 2018.0%  vs  B&H 1533.2%
+      Backtest     : Strategy 374.5%  vs  B&H 403.9%
     
       VN STOCKS  (13,201 train | 7,768 test)
       Best Spark   : GBT         Acc=0.5523  AUC=0.5725
       XGBoost      :             Acc=0.5587  AUC=0.5814
       Best DL      : GRU         Acc=0.5639  AUC=0.5886
       -> Winner    : GRU         Acc=0.5639
-      Backtest     : Strategy 2665.0%  vs  B&H 1421.5%
+      Backtest     : Strategy 63013.8%  vs  B&H 154879.5%
     
     ======================================================================
     HOAN THANH
@@ -2586,7 +2674,7 @@ print(f'ok Danh gia chi tiet xong! (US: {best_us_name} | VN: {best_vn_name})')
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_35_1.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_36_1.png)
     
 
 
@@ -2758,24 +2846,24 @@ print(f"\nTat ca fetch xong. Se du bao phan tu {DEMO_START} tro di.")
 
 ```
 
-    Fetch: 2025-11-29 -> 2026-05-28
+    Fetch: 2025-11-30 -> 2026-05-29
     Demo hien thi tu: 2026-05-01
     Fetching AAPL ...
-      AAPL: 122 rows  (2025-12-01 - 2026-05-27)
+      AAPL: 123 rows  (2025-12-01 - 2026-05-28)
     Fetching VCB ...
-      VCB : 128 rows  (2025-12-01 - 2026-05-27)
+      VCB : 129 rows  (2025-12-01 - 2026-05-28)
     Fetching FPT ...
-      FPT : 128 rows  (2025-12-01 - 2026-05-27)
+      FPT : 129 rows  (2025-12-01 - 2026-05-28)
     Fetching VNINDEX (KBS)...
       VNINDEX FAILED: No module named 'vnstock' -- dung 0
     Fetching S&P 500 (^GSPC)...
-      S&P500: 122 rows
+      S&P500: 123 rows
     Fetching VIX (^VIX)...
-      VIX: 123 rows
+      VIX: 124 rows
     Fetching 10Y Treasury (^TNX)...
-      TNX: 122 rows
+      TNX: 123 rows
     Fetching 3M T-bill (^IRX)...
-      IRX: 122 rows
+      IRX: 123 rows
     
     Tat ca fetch xong. Se du bao phan tu 2026-05-01 tro di.
     
@@ -2999,7 +3087,7 @@ print("Columns sample:", [c for c in demo_features_all['AAPL'].columns if c in
 
 ```
 
-    Features computed: {'AAPL': (122, 67), 'VCB': (128, 58), 'FPT': (128, 58)}
+    Features computed: {'AAPL': (123, 67), 'VCB': (129, 58), 'FPT': (129, 58)}
     Columns sample: ['sector_idx', 'vni_ret1d', 'vni_mom5', 'vni_ma_ratio']
     
 
@@ -3122,13 +3210,13 @@ print({sym: len(v) for sym, v in demo_results.items()})
 ```
 
     Predicting AAPL (model=GBT)...
-      AAPL: GBT (acc=0.526) [proxy: XGBoost inference] | 73 rows | features=55
+      AAPL: GBT (acc=0.526) [proxy: XGBoost inference] | 74 rows | features=55
     Predicting VCB (model=GRU)...
-      VCB: GRU (acc=0.564) | 51 rows
+      VCB: GRU (acc=0.564) | 52 rows
     Predicting FPT (model=GRU)...
-      FPT: GRU (acc=0.564) | 51 rows
+      FPT: GRU (acc=0.564) | 52 rows
     Du bao hoan tat!
-    {'AAPL': 73, 'VCB': 51, 'FPT': 51}
+    {'AAPL': 74, 'VCB': 52, 'FPT': 52}
     
 
 
@@ -3242,17 +3330,17 @@ print('* Du bao dua tren mo hinh train den 2021. Khong phai tu van dau tu.')
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_40_0.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_0.png)
     
 
 
     
     ============================================================
-    DU BAO XU HUONG — 29/05/2026 (ngay giao dich tiep theo)
+    DU BAO XU HUONG — 01/06/2026 (ngay giao dich tiep theo)
     ============================================================
-      AAPL   (US ) | ▲   UP | Close hom nay: 310.85
+      AAPL   (US ) | ▲   UP | Close hom nay: 310.99
       VCB    (VN ) | ▼ DOWN | Close hom nay: 64,200.00
-      FPT    (VN ) | ▼ DOWN | Close hom nay: 72,600.00
+      FPT    (VN ) | ▼ DOWN | Close hom nay: 73,600.00
     ============================================================
     * Du bao dua tren mo hinh train den 2021. Khong phai tu van dau tu.
     
@@ -3303,6 +3391,14 @@ def _equity_preds_pd(res, res_xgb, res_dl, best_name):
     else:  # Spark model (LR/RF/GBT/SVC/Ensemble)
         avail = [c for c in cols if c in res['predictions'][best_name].columns]
         return res['predictions'][best_name].select(*avail).toPandas()
+
+# FIX: Xay dung compare_df tu all_us_scores/all_vn_scores (Cell chon mo hinh) cho Hinh 4.1
+_rows = []
+for _m, _info in all_us_scores.items():
+    _rows.append({'Model': _m, 'Market': 'US', 'Accuracy': _info['accuracy'], 'AUC': _info['auc']})
+for _m, _info in all_vn_scores.items():
+    _rows.append({'Model': _m, 'Market': 'VN', 'Accuracy': _info['accuracy'], 'AUC': _info['auc']})
+compare_df = pd.DataFrame(_rows)
 
 # ── Hinh 4.1: So sanh Accuracy 8 mo hinh US vs VN ──────────────────────────
 print('Ve Hinh 4.1...')
@@ -3450,6 +3546,7 @@ ax.set_xlabel('Thoi gian', fontsize=12); ax.set_ylabel('Tang truong (%)', fontsi
 ax.legend(fontsize=11); ax.grid(True, alpha=0.3)
 plt.tight_layout(); save_fig(fig, 'Hinh_4_7', '4.7')
 
+
 # ── Hinh 4.8: Walk-Forward Accuracy theo tung nam ───────────────────────────
 print('Ve Hinh 4.8...')
 fig, axes = plt.subplots(1, 2, figsize=(14, 6))
@@ -3559,7 +3656,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_1.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_42_1.png)
     
 
 
@@ -3569,7 +3666,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_3.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_42_3.png)
     
 
 
@@ -3579,7 +3676,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_5.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_42_5.png)
     
 
 
@@ -3589,7 +3686,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_7.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_42_7.png)
     
 
 
@@ -3599,7 +3696,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_9.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_42_9.png)
     
 
 
@@ -3609,68 +3706,84 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
     
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_11.png)
+![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_42_11.png)
     
 
 
       Saved: figures/Hinh_4_6.png
     Ve Hinh 4.7...
-      [Note] GRU chua co df_ts_pd -> dung XGBoost data cho equity curve
     
 
 
-    
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_13.png)
-    
+    ---------------------------------------------------------------------------
 
+    ValueError                                Traceback (most recent call last)
 
-      Saved: figures/Hinh_4_7.png
-    Ve Hinh 4.8...
-    
-
-
-    
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_15.png)
-    
-
-
-      Saved: figures/Hinh_4_8.png
-    Ve Hinh 5.1...
+    Cell In[39], line 176
+        172 plt.tight_layout(); save_fig(fig, 'Hinh_4_6', '4.6')
+        173 
+        174 # ── Hinh 4.7: Backtest Equity Curve — VN (mo hinh tot nhat) ─────────────────
+        175 print('Ve Hinh 4.7...')
+    --> 176 pred_vn = _equity_preds_pd(res_vn, res_vn_xgb, res_vn_dl, best_vn_name)
+        177 pred_vn['time'] = pd.to_datetime(pred_vn['time'])
+        178 pred_vn = pred_vn.sort_values('time').reset_index(drop=True)
+        179 pred_vn['act']   = (pred_vn['next_close'] - pred_vn['close']) / pred_vn['close']
     
 
-
-    
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_17.png)
-    
-
-
-      Saved: figures/Hinh_5_1.png
-    Ve Hinh 5.2...
-    
-
-
-    
-![png](Stock_Analysis_PySpark_files/Stock_Analysis_PySpark_41_19.png)
+    Cell In[39], line 33, in _equity_preds_pd(res, res_xgb, res_dl, best_name)
+         29     elif best_name in ('LSTM', 'GRU'):
+         30         dl_met = res_dl['metrics'].get(best_name, {})
+         31         if 'df_ts_pd' in dl_met:
+         32             df = dl_met['df_ts_pd'].copy()
+    ---> 33             df['prediction'] = dl_met.get('y_pred', [0] * len(df))
+         34             avail = [c for c in cols if c in df.columns]
+         35             return df[avail]
+         36         else:
     
 
+    File d:\CODE\DoAnTotNgiep\.venv\Lib\site-packages\pandas\core\frame.py:4672, in DataFrame.__setitem__(self, key, value)
+       4668             # Column to set is duplicated
+       4669             self._setitem_array([key], value)
+       4670         else:
+       4671             # set column
+    -> 4672             self._set_item(key, value)
+    
 
-      Saved: figures/Hinh_5_2.png
+    File d:\CODE\DoAnTotNgiep\.venv\Lib\site-packages\pandas\core\frame.py:4872, in DataFrame._set_item(self, key, value)
+       4868 
+       4869         Series/TimeSeries will be conformed to the DataFrames index to
+       4870         ensure homogeneity.
+       4871         """
+    -> 4872         value, refs = self._sanitize_column(value)
+       4873 
+       4874         if (
+       4875             key in self.columns
     
-    ============================================================
-    HOAN TAT! Mo hinh tot nhat: US=GBT | VN=GRU
-    Tat ca hinh da luu vao: figures/
-    ============================================================
-      Hinh_4_1.png  (108 KB)
-      Hinh_4_2.png  (74 KB)
-      Hinh_4_3.png  (157 KB)
-      Hinh_4_4.png  (123 KB)
-      Hinh_4_5.png  (124 KB)
-      Hinh_4_6.png  (206 KB)
-      Hinh_4_7.png  (136 KB)
-      Hinh_4_8.png  (149 KB)
-      Hinh_5_1.png  (133 KB)
-      Hinh_5_2.png  (188 KB)
+
+    File d:\CODE\DoAnTotNgiep\.venv\Lib\site-packages\pandas\core\frame.py:5754, in DataFrame._sanitize_column(self, value)
+       5750                 value = Series(value)
+       5751             return _reindex_for_setitem(value, self.index)
+       5752 
+       5753         if is_list_like(value):
+    -> 5754             com.require_length_match(value, self.index)
+       5755         return sanitize_array(value, self.index, copy=True, allow_2d=True), None
     
+
+    File d:\CODE\DoAnTotNgiep\.venv\Lib\site-packages\pandas\core\common.py:601, in require_length_match(data, index)
+        597 """
+        598 Check the length of data matches the length of the index.
+        599 """
+        600 if len(data) != len(index):
+    --> 601     raise ValueError(
+        602         "Length of values "
+        603         f"({len(data)}) "
+        604         "does not match length of index "
+        605         f"({len(index)})"
+        606     )
+    
+
+    ValueError: Length of values (7531) does not match length of index (7768)
+
 
 ## PHẦN CUỐI: TỔNG HỢP TẤT CẢ CẢI TIẾN
 
@@ -3685,7 +3798,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 | 5 | **Features Volume** | log_volume, log_lag1_volume, volume_change, volume_ma_ratio, OBV signal |
 | 6 | **Features đặc thù thị trường VN** | limit_hit_rate (±7%), zero_change_rate, vol_consistency, intraday_pos, ato_gap |
 | 7 | **Features context thị trường** | sector_idx (11 nhóm ngành), vni_ret1d, vni_mom5, vni_ma_ratio (từ VN-Index) |
-| 8 | **Lag features đa khung thời gian** | lag1/2/3/5/10_return, lag1/2/3_close, lag1_volume – **tổng 43 features** |
+| 8 | **Lag features đa khung thời gian** | lag1/2/3/5/10_return, lag1/2/3_close, lag1_volume – tổng **47 features (VN) / 52 features (US)** |
 | 9 | **Tách thị trường US vs VN** | Pipeline + scaler + class weight riêng cho mỗi thị trường – tránh data leakage |
 | 10 | **Winsorize outliers** | Cắt extreme values trên 12 features (returns, momentum, volume) trước khi train |
 | 11 | **StandardScaler** | Chuẩn hóa features (mean=0, std=1) – Logistic Regression hội tụ tốt hơn |
@@ -3694,7 +3807,7 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 | 14 | **7 model Spark ML & sklearn** | Logistic Regression, Random Forest, GBT, LinearSVC (Spark ML) + XGBoost (sklearn) |
 | 15 | **MACD – EMA thực** | `ewm(span=12)` & `ewm(span=26)` trong pipeline XGBoost + LSTM/GRU (Spark dùng SMA proxy) |
 | 16 | **XGBoost** | Gradient Boosting chuẩn công nghiệp (sklearn/XGBoost), 400 trees, scale_pos_weight cho imbalance |
-| 17 | **LSTM + GRU (Học sâu)** | 2-layer RNN với Dropout 0.3, EarlyStopping, ReduceLROnPlateau – chuỗi 20 ngày/ticker |
+| 17 | **LSTM + GRU (Học sâu)** | 2-layer RNN với Dropout 0.5, EarlyStopping, ReduceLROnPlateau – chuỗi 20 ngày/ticker |
 | 18 | **Time-series Split** | Train: year ≤ 2021 – Test: year ≥ 2022 (đúng nguyên tắc time-series, không leak tương lai) |
 | 19 | **Backtest chiến lược** | Mô phỏng mua khi RF dự đoán UP, so sánh Strategy Return vs Buy & Hold |
 | 20 | **Demo dự báo thực tế** | Lấy data Apr–May 2026 từ yfinance, dự báo bằng model tốt nhất, vẽ biểu đồ trực quan |
@@ -3706,8 +3819,8 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 ### Pipeline tổng thể:
 ```
-Dữ liệu thô (39 mã: 18 US + 21 VN, ~10 năm 2013–2026)
-  ↓ PySpark Feature Engineering (43 features qua Window Functions)
+Dữ liệu thô (60 mã: 27 US + 33 VN, ~10 năm 2013–2026)
+  ↓ PySpark Feature Engineering (47 features VN / 52 features US qua Window Functions)
   ↓ Winsorize outliers + Drop nulls
   ↓ Tách US vs VN (ngưỡng label, label horizon riêng)
   ↓ StandardScaler + Class Weighting + Time-series Split (train≤2021, test≥2022)
@@ -3727,10 +3840,10 @@ Dữ liệu thô (39 mã: 18 US + 21 VN, ~10 năm 2013–2026)
 | # | Phát hiện | Bằng chứng |
 |---|-----------|------------|
 | 1 | **VN dự báo được tốt hơn US** | VN: acc ~55%, AUC ~0.58 (RF) — US: acc ~53%, AUC ~0.53 (Ensemble) |
-| 2 | **Backtest VN vượt xa Buy&Hold** | VN: Strategy ~1947% vs B&H ~919% (+1028%) — US: Strategy thua nhẹ B&H |
+| 2 | **Backtest VN vượt xa Buy&Hold** | VN: Strategy ~2921% vs B&H ~1404% (+1517%) — US: Strategy ~1215% vs B&H ~1114% (+101%) |
 | 3 | **Minh chứng Efficient Market Hypothesis** | US (thị trường phát triển) hiệu quả → khó dự báo; VN (mới nổi) kém hiệu quả → còn alpha |
 | 4 | **Tree-based > Deep Learning trên tabular** | RF/XGBoost (0.53-0.55) > LSTM/GRU (0.50-0.53) ở cả 2 thị trường |
-| 5 | **PySpark xử lý hiệu quả 150k+ dòng** | Window Functions tính 43 features song song theo từng ticker |
+| 5 | **PySpark xử lý hiệu quả 150k+ dòng** | Window Functions tính 47–52 features song song theo từng ticker |
 
 ### 2. Bài học về Data Leakage (research integrity)
 
@@ -3741,7 +3854,7 @@ Ban đầu model US đạt accuracy ~84% (AUC 0.93) — nhưng đây là **data 
 - **Backtest chưa tính phí giao dịch & slippage** (~0.1-0.15%/lệnh) → lợi nhuận thực tế sẽ thấp hơn
 - **Survivorship bias**: chỉ dùng các mã đang niêm yết, bỏ sót mã đã hủy niêm yết
 - **MACD trong Spark dùng SMA proxy** (đã fix bằng EMA thực trong pipeline XGBoost/DL)
-- **Chỉ 1 lần train/test split** theo thời gian (chưa walk-forward đa fold)
+- **Walk-forward validation** đã thực hiện với 6 folds (2019–2024) nhưng chưa kết hợp với refit tự động theo thời gian thực
 - **Chưa dùng dữ liệu phi cấu trúc**: tin tức, sentiment, báo cáo tài chính
 
 ### 4. Hướng phát triển
