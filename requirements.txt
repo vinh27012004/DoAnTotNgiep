@@ -1,24 +1,24 @@
 # Data collection
-yfinance==1.4.0
-vnstock==4.0.0
+yfinance
+vnstock
 
 # Data processing
-numpy==2.4.6
-pandas==3.0.3
-scipy==1.17.1
+numpy
+pandas
+scipy
 
 # Big Data
-pyspark==4.1.2
+pyspark
 
 # Machine Learning
-scikit-learn==1.8.0
-xgboost==3.2.0
-joblib==1.5.3
+scikit-learn
+xgboost
+joblib
 
 # Deep Learning
-tensorflow==2.21.0
-keras==3.14.1
+tensorflow
+keras
 
 # Visualization
-matplotlib==3.10.9
-seaborn==0.13.2
+matplotlib
+seaborn
