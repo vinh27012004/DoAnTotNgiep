@@ -60,7 +60,7 @@ def load_artifacts():
     return out
 
 
-@st.cache_data(show_spinner=False)
+# @st.cache_data(show_spinner=False)
 def features_for(ticker, market):
     raw = F.load_market_raw([ticker])
     df = F.compute_features(raw, market)
@@ -261,78 +261,6 @@ def tab_predict(art):
         tbl['future_return'] = (tbl['future_return'] * 100).round(2).astype(str) + '%'
         tbl.columns = ['Ngày', 'Giá đóng', 'P(tăng)', 'Dự báo', 'Lợi suất sau', 'Thực tế', 'Đúng?']
         st.dataframe(tbl.iloc[::-1], use_container_width=True, hide_index=True, height=320)
-
-    st.divider()
-    st.subheader("🛠️ Dự báo giá đóng cửa tương lai (giá trị)")
-    c3, c4 = st.columns([1, 3])
-    with c3:
-        horizon = st.slider("Số phiên dự báo", 1, 30, 5, key='forecast_horizon')
-        method = st.selectbox("Phương pháp", ['AR Linear', 'Naive (last close)'], key='forecast_method')
-        do_forecast = st.button("Tạo dự báo giá")
-    with c4:
-        st.caption("Mô hình AR tuyến tính dùng các giá đóng cửa trước đó làm đặc trưng; đơn giản và chạy nhanh.")
-
-    if do_forecast:
-        ser_df = df[['time', 'close']].dropna().sort_values('time')
-        if method == 'Naive (last close)':
-            last = float(ser_df['close'].iloc[-1])
-            preds = []
-            last_date = pd.Timestamp(ser_df['time'].iloc[-1]).normalize()
-            for i in range(1, horizon + 1):
-                preds.append((pd.Timestamp(last_date + pd.offsets.BDay(i)).date(), last))
-        else:
-            preds = forecast_prices(ser_df, horizon=horizon, lags=10)
-
-        if not preds:
-            st.warning("Không thể tạo dự báo — dữ liệu không đủ hoặc mô hình lỗi.")
-        else:
-            pred_df = pd.DataFrame(preds, columns=['date', 'pred_close'])
-            pred_df['pred_close'] = pred_df['pred_close'].round(2)
-            last_hist = ser_df.tail(120).copy()
-            last_hist['date'] = last_hist['time'].dt.date
-
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=last_hist['date'], y=last_hist['close'], mode='lines', name='Giá lịch sử'))
-            fig.add_trace(go.Scatter(x=pred_df['date'], y=pred_df['pred_close'], mode='lines+markers', name='Dự báo', marker=dict(symbol='circle', size=8)))
-            fig.update_layout(title=f'Dự báo {horizon} phiên — phương pháp: {method}', height=420)
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.markdown("**Bảng dự báo**")
-            st.dataframe(pred_df.rename(columns={'date': 'Ngày', 'pred_close': 'Giá dự báo'}), use_container_width=True, hide_index=True)
-
-    st.divider()
-    st.subheader("🔮 Dự báo XU HƯỚNG trong N phiên (xác suất)")
-    c5, c6 = st.columns([1, 3])
-    with c5:
-        horizon_trend = st.slider("Số phiên để đánh giá xu hướng (horizon)", 1, 30, 5, key='trend_horizon')
-        knn_k = st.number_input("Số neighbors (K)", min_value=10, max_value=2000, value=200, step=10, key='knn_k')
-        do_trend = st.button("Dự báo xu hướng")
-    with c6:
-        st.caption("Ước lượng xác suất 'TĂNG' trong H phiên tiếp theo dựa trên các phiên lịch sử có features tương tự.")
-
-    if do_trend:
-        prob_trend, n_used = knn_trend_probability(df, feat, bundle['scaler'], row, horizon=horizon_trend, k=int(knn_k), market=mkt)
-        if prob_trend is None:
-            st.warning("Không đủ dữ liệu lịch sử để ước lượng xu hướng cho horizon này.")
-        else:
-            pred_tr = prob_trend >= 0.5
-            g = go.Figure(go.Indicator(
-                mode="gauge+number", value=prob_trend * 100,
-                title={'text': f"Xác suất TĂNG — trong {horizon_trend} phiên"},
-                number={'suffix': "%"},
-                gauge={'axis': {'range': [0, 100]},
-                       'bar': {'color': '#26a69a' if pred_tr else '#ef5350'},
-                       'steps': [{'range': [0, 50], 'color': '#ffebee'},
-                                 {'range': [50, 100], 'color': '#e8f5e9'}],
-                       'threshold': {'line': {'color': 'black', 'width': 3}, 'value': 50}}))
-            g.update_layout(height=260, margin=dict(l=10, r=10, t=30, b=10))
-            st.plotly_chart(g, use_container_width=True)
-            if pred_tr:
-                st.success(f"📈 DỰ BÁO XU HƯỚNG: TĂNG · Xác suất {prob_trend*100:.1f}%")
-            else:
-                st.error(f"📉 DỰ BÁO XU HƯỚNG: KHÔNG TĂNG/ GIẢM · Xác suất tăng {prob_trend*100:.1f}%")
-            st.metric("Số phiên lịch sử dùng (neighbors)", f"{n_used}")
-
 
 def tab_performance(art):
     st.subheader("🎯 Hiệu năng mô hình & So sánh thị trường")

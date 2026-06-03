@@ -52,10 +52,10 @@ symbols = [
 
 # Thiết lập khoảng thời gian (Lấy ít nhất 3-5 năm để dự báo chính xác)
 start_date = '2014-01-01'
-end_date = '2026-03-10'
+end_date = pd.Timestamp.now().strftime('%Y-%m-%d')
 load_env_file(Path(".env"))
 api_key = os.getenv("VNSTOCK_API_KEY", "").strip()
-request_delay_seconds = float(os.getenv("VNSTOCK_REQUEST_DELAY", "1.0"))
+request_delay_seconds = float(os.getenv("VNSTOCK_REQUEST_DELAY", "4.0"))
 
 if api_key:
     if register_user(api_key=api_key):
