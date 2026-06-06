@@ -30,7 +30,7 @@ symbols = [
 
 # Thiết lập khoảng thời gian
 start_date = '2013-01-01'
-end_date = pd.Timestamp.now().strftime('%Y-%m-%d')
+end_date = '2026-03-10'
 
 output_dir = Path("csv")
 output_dir.mkdir(parents=True, exist_ok=True)
