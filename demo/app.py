@@ -61,6 +61,19 @@ def load_artifacts():
 
 
 @st.cache_data(show_spinner=False)
+def load_walkforward_export():
+    """Đọc kết quả walk-forward do notebook export (GRU cho VN, GBT cho US).
+    Trả về dict {'VN': {'model':.., 'folds':[..]}, 'US': {..}} hoặc None nếu chưa có."""
+    fp = ART_DIR / "walkforward.json"
+    if fp.exists():
+        try:
+            return json.load(open(fp, encoding='utf-8'))
+        except Exception:
+            return None
+    return None
+
+
+@st.cache_data(show_spinner=False)
 def features_for(ticker, market):
     raw = F.load_market_raw([ticker])
     df = F.compute_features(raw, market)
@@ -190,10 +203,82 @@ def tab_charts(art):
         st.dataframe(pd.DataFrame([show]).T.rename(columns={0: 'Giá trị'}), use_container_width=True)
 
 
+@st.cache_resource(show_spinner="Đang nạp model GRU (TensorFlow)...")
+def load_gru_bundle(market):
+    """Nạp model GRU do notebook export (chỉ VN). Lazy-import TensorFlow để app
+    không phụ thuộc TF khi không dùng GRU. Trả về dict hoặc None."""
+    import os
+    os.environ.setdefault('TF_CPP_MIN_LOG_LEVEL', '3')
+    meta_p = ART_DIR / f"gru_{market}_meta.json"
+    model_p = ART_DIR / f"gru_{market}.keras"
+    scaler_p = ART_DIR / f"gru_{market}_scaler.pkl"
+    if not (meta_p.exists() and model_p.exists() and scaler_p.exists()):
+        return None
+    try:
+        import joblib
+        from tensorflow.keras.models import load_model
+        meta = json.load(open(meta_p, encoding='utf-8'))
+        return {'model': load_model(model_p), 'scaler': joblib.load(scaler_p),
+                'features': meta['features'], 'seq_len': int(meta['seq_len']),
+                'accuracy': float(meta.get('accuracy', 0.0)),
+                'auc': float(meta.get('auc', 0.0)),
+                'ticker_acc': meta.get('ticker_acc', {})}
+    except Exception as e:
+        print(f"[GRU] load failed: {e}")
+        return None
+
+
+@st.cache_data(show_spinner=False)
+def gru_prob_cached(ticker, market):
+    """Xác suất TĂNG theo GRU cho từng phiên (chuỗi 20 ngày kết thúc tại phiên đó).
+    Trả về DataFrame[time, prob_up] hoặc None."""
+    gru = load_gru_bundle(market)
+    if gru is None:
+        return None
+    df = features_for(ticker, market)
+    feat_list, scaler = gru['features'], gru['scaler']
+    seq_len, model = gru['seq_len'], gru['model']
+    if any(c not in df.columns for c in feat_list):
+        return None
+    dfc = df.dropna(subset=feat_list).reset_index(drop=True)
+    if len(dfc) <= seq_len:
+        return None
+    X_all = scaler.transform(dfc[feat_list].values.astype(np.float64))
+    X_seq = np.array([X_all[i - seq_len + 1:i + 1] for i in range(seq_len - 1, len(dfc))],
+                     dtype=np.float32)
+    prob = model.predict(X_seq, verbose=0).flatten()
+    out = dfc.iloc[seq_len - 1:][['time']].copy()
+    out['prob_up'] = prob
+    return out
+
+
+def _predict_for_tab(df, ticker, mkt, art):
+    """Trả về (df_có_prob_up, model_label, ticker_acc). Ưu tiên GRU (nếu có artifact),
+    fallback XGBoost của app."""
+    if load_gru_bundle(mkt) is not None:
+        out = gru_prob_cached(ticker, mkt)
+        if out is not None and len(out):
+            gru = load_gru_bundle(mkt)
+            d = df.merge(out, on='time', how='left')
+            ta = gru['ticker_acc'].get(ticker, gru['accuracy'])
+            return d, f"GRU (acc={gru['accuracy']:.3f})", float(ta)
+    bundle = art[mkt]['bundle']
+    feat_x = bundle['features']
+    d = df.copy()
+    d['prob_up'] = np.nan
+    mask = d[feat_x].notna().all(axis=1)
+    if mask.any():
+        Xv = bundle['scaler'].transform(d.loc[mask, feat_x].values.astype(np.float64))
+        d.loc[mask, 'prob_up'] = bundle['model'].predict_proba(Xv)[:, 1]
+    ta = art[mkt]['metrics']['ticker_acc'].get(ticker, 0.0)
+    return d, f"XGBoost (acc={art[mkt]['metrics'].get('accuracy', 0):.3f})", float(ta)
+
+
 def tab_predict(art):
     st.subheader("🔮 Dự báo xu hướng giá phiên kế tiếp")
-    st.caption("Mô hình XGBoost dự báo xác suất giá TĂNG vượt ngưỡng vào phiên giao dịch tiếp theo "
-               "(ngưỡng: VN ±2%, US ±1%).")
+    st.caption("Dự báo xác suất giá TĂNG vượt ngưỡng vào phiên giao dịch tiếp theo "
+               "(ngưỡng: VN ±2%, US ±1%). VN dùng **GRU**, US dùng **XGBoost** "
+               "(tùy artifact đã export từ notebook).")
     c1, c2 = st.columns([1, 3])
     with c1:
         mkt = st.radio("Thị trường", ['VN', 'US'], horizontal=True, key="pred_mkt")
@@ -206,14 +291,14 @@ def tab_predict(art):
     bundle = art[mkt]['bundle']
     feat = bundle['features']
     df = features_for(ticker, mkt)
-    valid = df.dropna(subset=feat)
+    df_p, model_label, ta_val = _predict_for_tab(df, ticker, mkt, art)
+    valid = df_p.dropna(subset=['prob_up'])
     if valid.empty:
         st.warning("Không đủ dữ liệu để tính features cho mã này.")
         return
     row = valid.iloc[-1]
     forecast_date = next_business_day()
-    X = bundle['scaler'].transform(row[feat].values.astype(np.float64).reshape(1, -1))
-    prob_up = float(bundle['model'].predict_proba(X)[0, 1])
+    prob_up = float(row['prob_up'])
     pred_up = prob_up >= 0.5
 
     with c2:
@@ -237,17 +322,17 @@ def tab_predict(art):
             else:
                 st.error(f"### 📉 DỰ BÁO: GIẢM/ĐI NGANG\nXác suất tăng {prob_up*100:.1f}%")
             st.caption(
-                f"Phiên gần nhất trong dữ liệu: {row['time'].date()} · Dự báo hiển thị cho phiên kế tiếp của hôm nay: {forecast_date}"
+                f"Mô hình: **{model_label}** · Phiên gần nhất: {row['time'].date()} · "
+                f"Dự báo cho phiên kế tiếp: {forecast_date}"
             )
-            st.metric("Độ chính xác mô hình trên mã này (test)",
-                      f"{art[mkt]['metrics']['ticker_acc'].get(ticker, 0)*100:.1f}%")
+            st.metric(f"Độ chính xác {model_label.split(' ')[0]} trên mã này",
+                      f"{ta_val*100:.1f}%")
 
     st.divider()
-    st.markdown("**Backtest gần đây** — so khớp dự báo với kết quả thực tế (30 phiên có nhãn gần nhất):")
-    hist = df.dropna(subset=feat + ['future_return']).tail(30).copy()
+    st.markdown(f"**Backtest gần đây** — so khớp dự báo (**{model_label.split(' ')[0]}**) "
+                "với kết quả thực tế (30 phiên có nhãn gần nhất):")
+    hist = df_p.dropna(subset=['prob_up', 'future_return']).tail(30).copy()
     if not hist.empty:
-        Xh = bundle['scaler'].transform(hist[feat].values.astype(np.float64))
-        hist['prob_up'] = bundle['model'].predict_proba(Xh)[:, 1]
         hist['pred'] = np.where(hist['prob_up'] >= 0.5, 'TĂNG', 'GIẢM')
         thr = 0.02 if mkt == 'VN' else 0.01
         hist['thực tế'] = np.where(hist['future_return'] > thr, 'TĂNG',
@@ -332,6 +417,94 @@ def tab_predict(art):
             else:
                 st.error(f"📉 DỰ BÁO XU HƯỚNG: KHÔNG TĂNG/ GIẢM · Xác suất tăng {prob_trend*100:.1f}%")
             st.metric("Số phiên lịch sử dùng (neighbors)", f"{n_used}")
+
+
+def _walkforward_source(art, mkt):
+    """Ưu tiên kết quả walk-forward do notebook export (GRU/GBT); fallback XGBoost của app.
+    Trả về (folds, model_name, from_notebook)."""
+    export = load_walkforward_export()
+    if export and mkt in export and export[mkt].get('folds'):
+        return export[mkt]['folds'], export[mkt].get('model', '?'), True
+    wf = (art.get(mkt, {}).get('metrics', {}) or {}).get('walk_forward') or []
+    return wf, 'XGBoost', False
+
+
+def tab_walkforward(art):
+    st.subheader("📅 Walk-Forward Validation — Độ ổn định qua từng năm")
+    st.caption(
+        "Mỗi năm test, mô hình được **train lại trên toàn bộ quá khứ** (expanding window) rồi dự báo "
+        "năm đó — đúng như giao dịch thực tế: chỉ dùng dữ liệu đã biết để dự đoán tương lai. "
+        "Đây là cách kiểm định trung thực nhất, không rò rỉ dữ liệu (no lookahead).")
+
+    from_nb = load_walkforward_export() is not None
+    if from_nb:
+        st.success(
+            "✅ Kết quả lấy **trực tiếp từ notebook** — đúng mô hình tốt nhất mỗi thị trường "
+            "(**GRU** cho VN, **GBT** cho US), đồng bộ với báo cáo.")
+    else:
+        st.info(
+            "ℹ️ Đang dùng **XGBoost** (mô hình nhẹ của app) vì chưa có kết quả từ notebook. "
+            "Chạy cell walk-forward trong notebook để sinh `demo/artifacts/walkforward.json` "
+            "→ app sẽ tự hiển thị kết quả GRU/GBT.")
+
+    have_any = any(_walkforward_source(art, m)[0] for m in ['VN', 'US'])
+    if not have_any:
+        st.warning("Chưa có dữ liệu walk-forward. Hãy chạy `python demo/train_models.py` "
+                   "(XGBoost) hoặc cell walk-forward trong notebook (GRU/GBT).")
+        return
+
+    cols = st.columns(2)
+    for i, mkt in enumerate(['VN', 'US']):
+        if mkt not in art:
+            continue
+        wf, model_name, _src_nb = _walkforward_source(art, mkt)
+        with cols[i]:
+            flag = '🇻🇳 Việt Nam' if mkt == 'VN' else '🇺🇸 Hoa Kỳ'
+            st.markdown(f"### {flag} · `{model_name}`")
+            if not wf:
+                st.caption("Không có dữ liệu.")
+                continue
+            years = [r['test_year'] for r in wf]
+            accs  = [r['accuracy'] for r in wf]
+            aucs  = [r['auc'] for r in wf]
+            mean_acc, mean_auc = float(np.mean(accs)), float(np.mean(aucs))
+            std_acc = float(np.std(accs))
+            clr = '#16A34A' if mkt == 'VN' else '#2563EB'
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=years, y=accs, mode='lines+markers', name='Accuracy',
+                                     line=dict(color=clr, width=3), marker=dict(size=10)))
+            fig.add_trace(go.Scatter(x=years, y=aucs, mode='lines+markers', name='AUC-ROC',
+                                     line=dict(color=clr, width=1.5, dash='dash'), marker=dict(size=7),
+                                     opacity=0.7))
+            fig.add_hline(y=0.5, line=dict(color='gray', dash='dot'),
+                          annotation_text='Ngẫu nhiên (0.50)', annotation_position='bottom right')
+            fig.add_hline(y=mean_acc, line=dict(color=clr, dash='dash', width=1),
+                          annotation_text=f'TB acc={mean_acc:.3f}', annotation_position='top left')
+            fig.update_layout(title=f"{mkt} — Accuracy & AUC theo năm test",
+                              xaxis_title="Năm kiểm tra", yaxis_title="Score",
+                              yaxis_range=[0.42, 0.74], height=360,
+                              margin=dict(l=10, r=10, t=40, b=10),
+                              legend=dict(orientation='h', y=1.02))
+            st.plotly_chart(fig, use_container_width=True)
+
+            a, b, c = st.columns(3)
+            a.metric("Acc trung bình", f"{mean_acc*100:.1f}%")
+            b.metric("AUC trung bình", f"{mean_auc:.3f}")
+            c.metric("Độ lệch chuẩn Acc", f"±{std_acc*100:.1f}%")
+
+            tbl = pd.DataFrame(wf)[['test_year', 'train_end', 'accuracy', 'auc', 'n_test']].copy()
+            tbl['accuracy'] = (tbl['accuracy'] * 100).round(1).astype(str) + '%'
+            tbl['auc'] = tbl['auc'].round(3)
+            tbl['train_end'] = '2013–' + tbl['train_end'].astype(str)
+            tbl.columns = ['Năm test', 'Cửa sổ train', 'Accuracy', 'AUC', 'N_test']
+            st.dataframe(tbl, use_container_width=True, hide_index=True)
+
+    st.divider()
+    st.markdown(
+        "**Đọc kết quả:** đường Accuracy/AUC nằm **trên mốc 0.50** qua các năm cho thấy mô hình nắm "
+        "được tín hiệu xu hướng *ổn định*, không phải ăn may một giai đoạn. Độ lệch chuẩn nhỏ = ổn định cao. "
+        "Với dữ liệu tài chính (rất nhiễu), AUC ~0.55–0.60 đã là tín hiệu có giá trị.")
 
 
 def tab_performance(art):
@@ -428,19 +601,22 @@ def main():
             "- **Bài toán:** dự báo xu hướng giá (tăng/giảm) phiên kế tiếp.\n"
             "- **Dữ liệu:** OHLCV 2013–2026 + macro (VN-Index, S&P500, VIX).\n"
             "- **Features:** 34+ chỉ báo kỹ thuật (RSI, MACD, Bollinger, ADX...).\n"
-            "- **Mô hình:** XGBoost (pipeline trong notebook gồm cả Spark ML & LSTM/GRU).\n"
+            "- **Mô hình:** VN dùng GRU, US dùng XGBoost/GBT (notebook gồm cả Spark ML & LSTM/GRU).\n"
             "- **Tách dữ liệu:** Train ≤2021 · Test ≥2022 (out-of-time)." )
         st.divider()
         for mkt in ['VN', 'US']:
             if mkt in art:
                 m = art[mkt]['metrics']
                 st.metric(f"{mkt} · Accuracy", f"{m['accuracy']*100:.1f}%", f"AUC {m['auc']:.3f}")
-    t1, t2, t3 = st.tabs(["📊 Dữ liệu & Biểu đồ", "🔮 Dự báo", "🎯 Hiệu năng mô hình"])
+    t1, t2, t3, t4 = st.tabs(["📊 Dữ liệu & Biểu đồ", "🔮 Dự báo",
+                              "📅 Walk-Forward", "🎯 Hiệu năng mô hình"])
     with t1:
         tab_charts(art)
     with t2:
         tab_predict(art)
     with t3:
+        tab_walkforward(art)
+    with t4:
         tab_performance(art)
 
 

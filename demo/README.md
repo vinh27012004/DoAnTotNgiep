@@ -32,6 +32,7 @@ Script sẽ tự cài thư viện thiếu, train model nếu chưa có, rồi m�
 |-----|----------|------------------------------|
 | **📊 Dữ liệu & Biểu đồ** | Nến giá + Bollinger + MA20, khối lượng, RSI; bảng 34+ chỉ báo phiên gần nhất | "Đây là dữ liệu thật và bộ chỉ báo kỹ thuật mô hình học từ đó" |
 | **🔮 Dự báo** | Chọn mã → đồng hồ xác suất TĂNG phiên kế tiếp + backtest 30 phiên gần nhất (dự báo vs thực tế) | "Mô hình dự báo trực tiếp, và đây là độ chính xác kiểm chứng" |
+| **📅 Walk-Forward** | Accuracy/AUC qua từng năm 2019–2024 (train lại mỗi năm, expanding window) cho VN & US | "Mô hình ổn định qua nhiều năm, không ăn may một giai đoạn — kiểm định không lookahead" |
 | **🎯 Hiệu năng** | Accuracy/AUC/Edge của VN vs US, confusion matrix, ROC, độ chính xác từng mã, feature importance | "VN dự báo tốt hơn US — minh chứng cho EMH" |
 
 ## Kịch bản trình bày gợi ý (5–7 phút)
@@ -45,12 +46,16 @@ Script sẽ tự cài thư viện thiếu, train model nếu chưa có, rồi m�
 
 ## Lưu ý kỹ thuật
 
-- Mô hình demo: **XGBoost**, tách dữ liệu out-of-time (Train ≤ 2021, Test ≥ 2022),
-  đúng như pipeline `run_xgb_pipeline()` trong notebook.
-- Notebook gốc còn có Spark ML (LR/RF/GBT/SVC/Ensemble) và Deep Learning (LSTM/GRU);
-  app chỉ dùng XGBoost để demo nhẹ và nhanh.
-- File sinh ra trong `demo/artifacts/` (model `.pkl` + metrics `.json`) — train lại
-  bất cứ lúc nào bằng `python demo/train_models.py`.
+- Mô hình demo: **XGBoost** (mặc định, nhẹ, không cần TF/Spark), tách dữ liệu out-of-time
+  (Train ≤ 2021, Test ≥ 2022) như pipeline `run_xgb_pipeline()` trong notebook.
+- **Dùng GRU cho VN (tùy chọn):** chạy cell walk-forward trong notebook sẽ export
+  `walkforward.json` + `gru_VN.keras` (+scaler, meta) vào `demo/artifacts/`. Khi đó:
+  - Tab **Dự báo** tự động dùng **GRU** cho mã VN (lazy-load TensorFlow, dựng chuỗi 20 ngày).
+  - Tab **Walk-Forward** hiển thị kết quả **GRU (VN) / GBT (US)** thật từ notebook.
+  - Nếu chưa export, app fallback XGBoost — vẫn chạy bình thường.
+- Notebook gốc còn có Spark ML (LR/RF/GBT/SVC/Ensemble) và Deep Learning (LSTM/GRU).
+- File sinh trong `demo/artifacts/`: `model_*.pkl` + `metrics_*.json` (XGBoost, từ
+  `python demo/train_models.py`); `walkforward.json` + `gru_VN.*` (từ notebook).
 
 ## Cấu trúc
 

@@ -101,6 +101,14 @@ def train_market(market):
     print(f"  XGBoost {market}: Accuracy={acc:.4f}  AUC={auc:.4f}  (naive={naive_acc:.4f})")
     print(f"  Top 5: {', '.join(fi.head(5).index.tolist())}")
 
+    # ── Walk-forward validation: retrain mỗi năm (expanding window) ──
+    wf = walk_forward(df, feat, market)
+    if wf:
+        wf_acc = np.mean([r['accuracy'] for r in wf])
+        wf_auc = np.mean([r['auc'] for r in wf])
+        print(f"  Walk-forward {market}: {len(wf)} folds | "
+              f"mean Acc={wf_acc:.4f}  mean AUC={wf_auc:.4f}")
+
     # ── Lưu artifacts ──
     joblib.dump({'model': model, 'scaler': scaler, 'features': feat,
                  'market': market, 'best_params': best},
@@ -121,6 +129,7 @@ def train_market(market):
         'feature_importance': {k: float(v) for k, v in fi.head(15).items()},
         'roc': _roc_points(y_ts, y_prob),
         'label_dist_test': {'down': int(np.sum(y_ts == 0)), 'up': int(np.sum(y_ts == 1))},
+        'walk_forward': wf,
     }
     with open(ART_DIR / f"metrics_{market}.json", 'w', encoding='utf-8') as fp:
         json.dump(metrics, fp, ensure_ascii=False, indent=2)
@@ -133,6 +142,40 @@ def _roc_points(y_true, y_prob, n=50):
     fpr, tpr, _ = roc_curve(y_true, y_prob)
     idx = np.linspace(0, len(fpr) - 1, min(n, len(fpr))).astype(int)
     return {'fpr': fpr[idx].tolist(), 'tpr': tpr[idx].tolist()}
+
+
+def walk_forward(df, feat, market, folds=None):
+    """Walk-forward validation: với mỗi năm test, train lại trên toàn bộ quá khứ
+    (expanding window) → đo độ ổn định của mô hình qua từng năm. Không lookahead.
+    Trả về list[dict(test_year, train_end, accuracy, auc, n_test)].
+    """
+    if folds is None:
+        folds = [(2018, 2019), (2019, 2020), (2020, 2021),
+                 (2021, 2022), (2022, 2023), (2023, 2024)]
+    results = []
+    for train_end, test_yr in folds:
+        tr = df[df['year'] <= train_end]
+        ts = df[df['year'] == test_yr]
+        if len(tr) < 100 or len(ts) < 10:
+            continue
+        sc = StandardScaler()
+        X_tr = sc.fit_transform(tr[feat].values.astype(np.float64))
+        y_tr = tr['label'].values.astype(int)
+        X_ts = sc.transform(ts[feat].values.astype(np.float64))
+        y_ts = ts['label'].values.astype(int)
+        cnt = np.bincount(y_tr)
+        spw = float(cnt[0]) / float(max(int(cnt[1]) if len(cnt) > 1 else 1, 1))
+        m = XGBClassifier(n_estimators=200, max_depth=4, learning_rate=0.05,
+                          subsample=0.8, colsample_bytree=0.8, reg_alpha=0.1, reg_lambda=1.0,
+                          scale_pos_weight=spw, random_state=42, n_jobs=-1, verbosity=0)
+        m.fit(X_tr, y_tr, verbose=False)
+        prob = m.predict_proba(X_ts)[:, 1]
+        pred = (prob >= 0.5).astype(int)
+        acc = accuracy_score(y_ts, pred)
+        auc = roc_auc_score(y_ts, prob) if len(np.unique(y_ts)) > 1 else 0.5
+        results.append({'test_year': int(test_yr), 'train_end': int(train_end),
+                        'accuracy': float(acc), 'auc': float(auc), 'n_test': int(len(y_ts))})
+    return results
 
 
 if __name__ == '__main__':
