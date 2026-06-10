@@ -4,7 +4,7 @@ Tài liệu này hướng dẫn cách thiết lập môi trường và chạy ph
 
 **Yêu cầu trước**
 
-- Python 3.8 hoặc mới hơn
+- Python 3.10 hoặc mới hơn (đã kiểm thử trên 3.10)
 - Java JDK 8+ (cần cho PySpark)
 - Git (tuỳ chọn)
 
@@ -31,19 +31,14 @@ source .venv/bin/activate
 pip install --upgrade pip
 ```
 
-**2) Cài phụ thuộc cơ bản**
-
-Nếu dự án có `requirements.txt`, cài bằng:
+**2) Cài thư viện**
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Nếu chưa có, bạn có thể cài các gói thường dùng cho phân tích PySpark:
-
-```bash
-pip install -r requirements.txt
-```
+Lệnh này cài toàn bộ thư viện cần thiết: PySpark, TensorFlow, XGBoost, scikit-learn,
+pandas, Jupyter (để mở notebook) và Streamlit/Plotly (cho web app demo).
 
 **3) Thiết lập Java (nếu dùng PySpark)**
 
@@ -95,10 +90,8 @@ df = spark.read.csv('csv/*.csv', header=True, inferSchema=True)
 
 **7) Lưu ý & gợi ý**
 
-- Nếu gặp lỗi liên quan tới Java/PySpark, kiểm tra `JAVA_HOME` và phiên bản JDK.
-- Để tái tạo môi trường triển khai, lưu `pip freeze > requirements.txt` sau khi cài xong.
-- Nếu bạn muốn, tôi có thể tạo `requirements.txt` tự động từ môi trường hiện tại.
-
----
-
-Nếu cần tôi sẽ mở rộng nội dung (cài đặt cụ thể cho Windows, Linux, cấu hình Spark local, hoặc tạo `requirements.txt`).
+- Dữ liệu đã có sẵn trong `csv/` (bản train, đến 11/03/2026) và `csv_demo/` (bản đầy
+  đủ cho web app demo). **Không cần chạy `datavn.py`/`dataglobal.py`** trừ khi muốn
+  cập nhật dữ liệu mới.
+- Nếu gặp lỗi liên quan tới Java/PySpark, kiểm tra `JAVA_HOME` và phiên bản JDK (`java -version`).
+- Web app demo: xem hướng dẫn riêng trong [demo/README.md](demo/README.md).

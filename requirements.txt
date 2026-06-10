@@ -22,3 +22,11 @@ keras
 # Visualization
 matplotlib
 seaborn
+
+# Notebook (để mở và chạy Stock_Analysis_PySpark.ipynb)
+jupyterlab
+ipykernel
+
+# Web app demo (tùy chọn — chỉ cần nếu chạy demo/app.py)
+streamlit
+plotly

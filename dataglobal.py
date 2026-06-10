@@ -28,12 +28,29 @@ symbols = [
     'VZ',
 ]
 
+from datetime import datetime
+
 # Thiết lập khoảng thời gian
 start_date = '2013-01-01'
-end_date = '2026-03-10'
+end_date = datetime.now().strftime('%Y-%m-%d')
 
-output_dir = Path("csv")
-output_dir.mkdir(parents=True, exist_ok=True)
+# Chia 2 bộ dữ liệu:
+#   csv/      -> bản train (cắt đến CUTOFF) cho notebook nộp thầy
+#   csv_demo/ -> bản đầy đủ cho app demo
+CUTOFF = '2026-03-11'
+train_dir = Path("csv")
+demo_dir = Path("csv_demo")
+train_dir.mkdir(parents=True, exist_ok=True)
+demo_dir.mkdir(parents=True, exist_ok=True)
+
+
+def save_split(data, name):
+    """Lưu bản đầy đủ vào csv_demo/ và bản cắt (time <= CUTOFF) vào csv/."""
+    data.to_csv(demo_dir / f"{name}.csv", index=False)
+    cut = data[pd.to_datetime(data['time']) <= pd.Timestamp(CUTOFF)]
+    cut.to_csv(train_dir / f"{name}.csv", index=False)
+    return len(cut), len(data)
+
 
 print("Đang tải dữ liệu US stocks...\n")
 
@@ -59,9 +76,9 @@ for symbol in symbols:
         keep = ['time', 'open', 'high', 'low', 'close', 'volume']
         data = data[[c for c in keep if c in data.columns]]
 
-        output_file = output_dir / f"{symbol}.csv"
-        data.to_csv(output_file, index=False)
-        print(f"  Hoàn thành {output_file} ({len(data)} dòng)")
+        n_train, n_full = save_split(data, symbol)
+        print(f"  Hoàn thành {symbol}: csv_demo {n_full} dòng, "
+              f"csv {n_train} dòng (<= {CUTOFF})")
         ok.append(symbol)
     except Exception as e:
         print(f"  LỖI {symbol}: {e}")
@@ -80,9 +97,8 @@ try:
     vix = vix.rename(columns={'Date': 'time', 'Open': 'open', 'High': 'high',
                                'Low': 'low', 'Close': 'close', 'Volume': 'volume'})
     vix = vix[[c for c in ['time','open','high','low','close','volume'] if c in vix.columns]]
-    vix_file = output_dir / "VIX.csv"
-    vix.to_csv(vix_file, index=False)
-    print(f"  Hoàn thành {vix_file} ({len(vix)} dòng)")
+    n_train, n_full = save_split(vix, "VIX")
+    print(f"  Hoàn thành VIX: csv_demo {n_full} dòng, csv {n_train} dòng (<= {CUTOFF})")
 except Exception as e:
     print(f"  LỖI VIX: {e}")
 
@@ -97,9 +113,8 @@ try:
     sp = sp.rename(columns={'Date': 'time', 'Open': 'open', 'High': 'high',
                             'Low': 'low', 'Close': 'close', 'Volume': 'volume'})
     sp = sp[[c for c in ['time','open','high','low','close','volume'] if c in sp.columns]]
-    sp_file = output_dir / "SP500.csv"
-    sp.to_csv(sp_file, index=False)
-    print(f"  Hoàn thành {sp_file} ({len(sp)} dòng)")
+    n_train, n_full = save_split(sp, "SP500")
+    print(f"  Hoàn thành SP500: csv_demo {n_full} dòng, csv {n_train} dòng (<= {CUTOFF})")
 except Exception as e:
     print(f"  LỖI S&P500: {e}")
 
@@ -117,8 +132,8 @@ for ticker, fname, label in [
             df_r.columns = [c[0] if isinstance(c, tuple) else c for c in df_r.columns]
         df_r = df_r.rename(columns={'Date': 'time', 'Close': 'close'})
         df_r = df_r[['time', 'close']].rename(columns={'close': 'rate'})
-        rate_file = output_dir / fname
-        df_r.to_csv(rate_file, index=False)
-        print(f"  Hoàn thành {rate_file} ({len(df_r)} dòng)")
+        n_train, n_full = save_split(df_r, Path(fname).stem)
+        print(f"  Hoàn thành {label}: csv_demo {n_full} dòng, "
+              f"csv {n_train} dòng (<= {CUTOFF})")
     except Exception as e:
         print(f"  LỖI {ticker}: {e}")

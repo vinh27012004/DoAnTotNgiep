@@ -8,10 +8,10 @@
 
 Dự án dự báo **xu hướng giá chứng khoán** (tăng/giảm) cho ngày tiếp theo dựa trên dữ liệu lịch sử từ **2013 đến 2026**, áp dụng Machine Learning và Deep Learning với nền tảng xử lý dữ liệu lớn PySpark.
 
-**Phạm vi dữ liệu:**
-- **65 cổ phiếu** gồm 27 mã US (NYSE/NASDAQ) và 33 mã Việt Nam (HOSE)
+**Phạm vi dữ liệu:** 65 bộ dữ liệu
+- **60 mã cổ phiếu**: 27 mã US (NYSE/NASDAQ) + 33 mã Việt Nam (HOSE)
+- **5 chỉ số macro**: VN-Index, S&P 500, VIX, TNX (10Y Treasury), IRX (3M T-Bill)
 - Dữ liệu OHLCV theo ngày, ~196,000 bản ghi
-- Macro context: VN-Index, S&P 500, VIX, TNX (10Y Treasury), IRX (3M T-Bill)
 
 **Kết quả nổi bật:**
 | Thị trường | Accuracy | AUC | Edge vs Naive |
@@ -30,11 +30,17 @@ DoAnTotNgiep/
 ├── Stock_Analysis_PySpark.ipynb   # Notebook chính — toàn bộ pipeline phân tích
 ├── dataglobal.py                  # Thu thập dữ liệu cổ phiếu US (yfinance)
 ├── datavn.py                      # Thu thập dữ liệu cổ phiếu VN (vnstock)
-├── csv/                           # Dữ liệu CSV (65 file cổ phiếu + macro)
+├── csv/                           # Dữ liệu train (đến 11/03/2026) — notebook đọc thư mục này
+├── csv_demo/                      # Dữ liệu đầy đủ (mới nhất) — dành cho web app demo
+├── demo/                          # Web app Streamlit demo (xem demo/README.md)
 ├── figures/                       # Biểu đồ xuất ra
 ├── requirements.txt               # Danh sách thư viện
 └── INSTALLATION.md                # Hướng dẫn cài đặt chi tiết
 ```
+
+> **Dữ liệu đã có sẵn trong `csv/`** — không cần chạy lại `datavn.py`/`dataglobal.py`.
+> Chỉ cần cài thư viện rồi mở notebook chạy là được. Hai script thu thập dữ liệu chỉ
+> dùng khi muốn cập nhật dữ liệu mới (cần mạng và API key vnstock).
 
 ---
 
@@ -80,7 +86,7 @@ Huấn luyện mô hình (Spark ML + XGBoost + LSTM/GRU)
 ## Cài đặt
 
 **Yêu cầu:**
-- Python 3.8+
+- Python 3.10+ (đã kiểm thử trên 3.10)
 - Java JDK 8+ (cho PySpark)
 
 **Cài đặt môi trường:**
@@ -106,7 +112,10 @@ pip install -r requirements.txt
 
 ---
 
-## Thu thập dữ liệu
+## Thu thập dữ liệu (tùy chọn)
+
+> Dữ liệu đã được kèm sẵn trong `csv/` và `csv_demo/`. Bước này **chỉ cần khi muốn
+> cập nhật dữ liệu mới nhất** (yêu cầu kết nối mạng; `datavn.py` cần API key vnstock).
 
 ```bash
 # Tải dữ liệu cổ phiếu US (AAPL, MSFT, NVDA, ... + VIX, S&P500, TNX, IRX)
@@ -116,7 +125,8 @@ python dataglobal.py
 python datavn.py
 ```
 
-Dữ liệu sẽ được lưu vào thư mục `csv/` theo định dạng:
+Mỗi script lưu **đồng thời 2 bộ**: bản train cắt đến 11/03/2026 vào `csv/` (notebook
+dùng) và bản đầy đủ mới nhất vào `csv_demo/` (web app demo dùng). Định dạng file:
 
 | Cột | Mô tả |
 |-----|-------|

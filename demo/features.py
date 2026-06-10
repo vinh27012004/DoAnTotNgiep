@@ -13,8 +13,14 @@ import pandas as pd
 
 warnings.simplefilter("ignore", category=pd.errors.PerformanceWarning)
 
-# ── Thư mục dữ liệu CSV (mặc định: <repo>/csv) ──────────────────────────────
-CSV_DIR = Path(__file__).resolve().parent.parent / "csv"
+# ── Thư mục dữ liệu CSV ─────────────────────────────────────────────────────
+# App demo dùng dữ liệu ĐẦY ĐỦ (csv_demo/, đến 6/2026).
+# Notebook train dùng csv/ (đã cắt đến 11/3/2026).
+# Có thể ghi đè bằng biến môi trường CSV_DIR.
+CSV_DIR = Path(os.environ.get(
+    "CSV_DIR",
+    Path(__file__).resolve().parent.parent / "csv_demo",
+))
 
 # ── Danh sách mã (khớp notebook PHẦN 7) ─────────────────────────────────────
 US_TICKERS = [

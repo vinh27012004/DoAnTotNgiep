@@ -7,6 +7,7 @@ Chạy:  streamlit run demo/app.py
 import json
 import sys
 from pathlib import Path
+import time
 
 import numpy as np
 import pandas as pd
@@ -73,9 +74,67 @@ def load_walkforward_export():
     return None
 
 
+def fetch_latest_data(ticker, market):
+    """Fetch latest OHLCV data from yfinance (US) or vnstock (VN).
+    Returns DataFrame with columns: time, open, high, low, close, volume, ticker
+    or None if fetch fails."""
+    try:
+        if market == 'US':
+            import yfinance as yf
+            # Fetch last 30 days to ensure we get new data
+            data = yf.download(ticker, period='1mo', progress=False, auto_adjust=True)
+            if data is None or len(data) == 0:
+                return None
+            data = data.reset_index()
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = [c[0] if isinstance(c, tuple) else c for c in data.columns]
+            col_map = {'Date': 'time', 'Open': 'open', 'High': 'high',
+                       'Low': 'low', 'Close': 'close', 'Volume': 'volume'}
+            data = data.rename(columns=col_map)
+            data = data[['time', 'open', 'high', 'low', 'close', 'volume']]
+            data['ticker'] = ticker
+            return data
+        else:  # VN
+            # Dữ liệu VN dùng trực tiếp từ các file csv/<ticker>.csv.
+            # Không gọi vnstock trong app để tránh rate limit và không cần tạo vietnam_stocks.csv.
+            return None
+    except Exception as e:
+        st.warning(f"Không thể tải dữ liệu mới cho {ticker}: {str(e)}")
+        return None
+
+
+def merge_with_csv(ticker, market, fresh_data):
+    """Merge fresh data with existing CSV data, keeping only unique dates."""
+    try:
+        csv_data = F.load_market_raw([ticker])
+        if csv_data is None or len(csv_data) == 0:
+            return fresh_data
+        
+        # Combine and remove duplicates (keep fresh data if same date)
+        combined = pd.concat([csv_data, fresh_data], ignore_index=True)
+        combined = combined.sort_values('time').reset_index(drop=True)
+        combined = combined.drop_duplicates(subset=['time', 'ticker'], keep='last')
+        return combined
+    except Exception:
+        return fresh_data
+
+
 @st.cache_data(show_spinner=False)
 def features_for(ticker, market):
     raw = F.load_market_raw([ticker])
+    df = F.compute_features(raw, market)
+    return df
+
+
+def features_for_fresh(ticker, market):
+    """Load features with fresh data (no cache). Used after data refresh."""
+    raw = F.load_market_raw([ticker])
+    
+    # Try to fetch fresh data
+    fresh = fetch_latest_data(ticker, market)
+    if fresh is not None and len(fresh) > 0:
+        raw = merge_with_csv(ticker, market, fresh)
+    
     df = F.compute_features(raw, market)
     return df
 
@@ -285,12 +344,21 @@ def tab_predict(art):
         tickers = F.VN_TICKERS if mkt == 'VN' else F.US_TICKERS
         ticker = st.selectbox("Chọn mã cổ phiếu", sorted(tickers),
                               format_func=lambda t: f"{t} — {NAMES.get(t, t)}", key="pred_tk")
+        
+        # Refresh button for real-time data
+        refresh_button = st.button("🔄 Cập nhật dữ liệu mới nhất", key="refresh_data")
+    
     if mkt not in art:
         st.error(f"Chưa có model cho thị trường {mkt}. Chạy: python demo/train_models.py")
         return
     bundle = art[mkt]['bundle']
     feat = bundle['features']
-    df = features_for(ticker, mkt)
+    
+    # US có thể tải dữ liệu mới; VN luôn đọc trực tiếp từ csv/<ticker>.csv
+    if refresh_button and mkt == 'US':
+        df = features_for_fresh(ticker, mkt)
+    else:
+        df = features_for(ticker, mkt)
     df_p, model_label, ta_val = _predict_for_tab(df, ticker, mkt, art)
     valid = df_p.dropna(subset=['prob_up'])
     if valid.empty:
@@ -329,22 +397,36 @@ def tab_predict(art):
                       f"{ta_val*100:.1f}%")
 
     st.divider()
-    st.markdown(f"**Backtest gần đây** — so khớp dự báo (**{model_label.split(' ')[0]}**) "
-                "với kết quả thực tế (30 phiên có nhãn gần nhất):")
-    hist = df_p.dropna(subset=['prob_up', 'future_return']).tail(30).copy()
+    st.markdown(f"**Backtest gần đây** — dự báo (**{model_label.split(' ')[0]}**) "
+                "từ ngày hiện tại về trước (40 phiên gần nhất):")
+    st.caption("⏳ = Chưa có kết quả thực tế (dự báo cho tương lai) · ✅/❌ = So khớp với kết quả đã biết")
+    
+    # Lấy tất cả phiên có prob_up (bao gồm cả phiên chưa có future_return)
+    hist = df_p.dropna(subset=['prob_up']).tail(40).copy()
     if not hist.empty:
         hist['pred'] = np.where(hist['prob_up'] >= 0.5, 'TĂNG', 'GIẢM')
         thr = 0.02 if mkt == 'VN' else 0.01
-        hist['thực tế'] = np.where(hist['future_return'] > thr, 'TĂNG',
-                                   np.where(hist['future_return'] < -thr, 'GIẢM', 'đi ngang'))
-        hist['đúng?'] = np.where(
-            ((hist['prob_up'] >= 0.5) & (hist['future_return'] > thr)) |
-            ((hist['prob_up'] < 0.5) & (hist['future_return'] <= thr)), '✅', '❌')
+        
+        # Xử lý phiên có future_return (đã biết kết quả)
+        has_result = hist['future_return'].notna()
+        hist['thực tế'] = '⏳ Chờ KQ'
+        hist.loc[has_result, 'thực tế'] = np.where(
+            hist.loc[has_result, 'future_return'] > thr, 'TĂNG',
+            np.where(hist.loc[has_result, 'future_return'] < -thr, 'GIẢM', 'đi ngang'))
+        
+        hist['đúng?'] = '⏳'
+        hist.loc[has_result, 'đúng?'] = np.where(
+            ((hist.loc[has_result, 'prob_up'] >= 0.5) & (hist.loc[has_result, 'future_return'] > thr)) |
+            ((hist.loc[has_result, 'prob_up'] < 0.5) & (hist.loc[has_result, 'future_return'] <= thr)), '✅', '❌')
+        
         tbl = hist[['time', 'close', 'prob_up', 'pred', 'future_return', 'thực tế', 'đúng?']].copy()
         tbl['time'] = tbl['time'].dt.date
         tbl['prob_up'] = (tbl['prob_up'] * 100).round(1).astype(str) + '%'
-        tbl['future_return'] = (tbl['future_return'] * 100).round(2).astype(str) + '%'
+        tbl['future_return'] = tbl['future_return'].apply(
+            lambda x: '—' if pd.isna(x) else f"{x*100:.2f}%")
         tbl.columns = ['Ngày', 'Giá đóng', 'P(tăng)', 'Dự báo', 'Lợi suất sau', 'Thực tế', 'Đúng?']
+        
+        # Sắp xếp từ mới → cũ (ngày hiện tại trên cùng)
         st.dataframe(tbl.iloc[::-1], use_container_width=True, hide_index=True, height=320)
 
     st.divider()
