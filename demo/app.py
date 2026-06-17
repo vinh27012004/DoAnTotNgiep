@@ -14,8 +14,17 @@ import pandas as pd
 import joblib
 import streamlit as st
 import plotly.graph_objects as go
+import plotly.io as pio
 from plotly.subplots import make_subplots
 from sklearn.linear_model import LinearRegression
+
+# ── Bảng màu "Finance terminal" ─────────────────────────────────────────────
+CLR = {
+    "bg": "#0E1117", "panel": "#161B26", "border": "#232B38",
+    "text": "#E6EDF3", "muted": "#8B97A7",
+    "teal": "#26C6A6", "blue": "#5B9CF6", "red": "#EF5350",
+    "amber": "#FFA726", "purple": "#AB7DF6", "green": "#26A69A",
+}
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import features as F
@@ -46,6 +55,98 @@ NAME_US = {
 NAMES = {**NAME_VN, **NAME_US}
 
 
+# ── Theme: CSS + Plotly dark template ───────────────────────────────────────
+_CSS = """
+<style>
+/* Ẩn chrome mặc định của Streamlit */
+#MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], footer {visibility:hidden; height:0;}
+.block-container {padding-top:1.2rem; padding-bottom:2rem; max-width:1400px;}
+
+/* Nền */
+.stApp {background:#0E1117;}
+
+/* Hero header */
+.hero {
+  background:linear-gradient(135deg,#10202A 0%,#0E1117 60%);
+  border:1px solid #232B38; border-left:4px solid #26C6A6;
+  border-radius:14px; padding:18px 22px; margin-bottom:14px;
+}
+.hero-row {display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px;}
+.hero-title {font-size:1.55rem; font-weight:800; letter-spacing:.3px; color:#E6EDF3; margin:0;}
+.hero-title .tk {color:#26C6A6;}
+.hero-sub {color:#8B97A7; font-size:.9rem; margin-top:4px;}
+.badge {display:inline-flex; flex-direction:column; align-items:center;
+  background:#161B26; border:1px solid #232B38; border-radius:10px;
+  padding:8px 16px; min-width:96px;}
+.badge .b-lab {font-size:.7rem; color:#8B97A7; text-transform:uppercase; letter-spacing:.5px;}
+.badge .b-val {font-size:1.2rem; font-weight:800; color:#26C6A6;}
+.badge.us .b-val {color:#5B9CF6;}
+.live {display:inline-flex; align-items:center; gap:6px; color:#26C6A6; font-size:.8rem; font-weight:700;}
+.live .dot {width:8px; height:8px; border-radius:50%; background:#26C6A6; box-shadow:0 0 8px #26C6A6;}
+
+/* st.metric -> card */
+[data-testid="stMetric"] {
+  background:#161B26; border:1px solid #232B38; border-left:3px solid #26C6A6;
+  border-radius:10px; padding:12px 16px;
+}
+[data-testid="stMetricLabel"] p {color:#8B97A7 !important; font-size:.78rem;}
+[data-testid="stMetricValue"] {color:#E6EDF3 !important; font-weight:800;}
+
+/* Tabs bo tròn */
+.stTabs [data-baseweb="tab-list"] {gap:6px; border-bottom:1px solid #232B38;}
+.stTabs [data-baseweb="tab"] {
+  background:#161B26; border:1px solid #232B38; border-bottom:none;
+  border-radius:9px 9px 0 0; padding:9px 18px; color:#8B97A7;
+}
+.stTabs [aria-selected="true"] {background:#26C6A6 !important; color:#0E1117 !important; font-weight:700;}
+
+/* Nút */
+.stButton>button {
+  background:#161B26; border:1px solid #2A3445; color:#E6EDF3; border-radius:9px;
+}
+.stButton>button:hover {border-color:#26C6A6; color:#26C6A6;}
+
+/* Divider mảnh hơn, expander/sidebar */
+hr {border-color:#232B38 !important;}
+[data-testid="stSidebar"] {border-right:1px solid #232B38;}
+[data-testid="stExpander"] {border:1px solid #232B38; border-radius:10px;}
+</style>
+"""
+
+
+def inject_theme():
+    """Inject CSS + đặt template Plotly tối để mọi biểu đồ đồng bộ với nền."""
+    st.markdown(_CSS, unsafe_allow_html=True)
+    if "finance_dark" not in pio.templates:
+        pio.templates["finance_dark"] = go.layout.Template(layout=dict(
+            paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(color=CLR["text"], size=12),
+            xaxis=dict(gridcolor=CLR["border"], zerolinecolor=CLR["border"], linecolor=CLR["border"]),
+            yaxis=dict(gridcolor=CLR["border"], zerolinecolor=CLR["border"], linecolor=CLR["border"]),
+            colorway=[CLR["teal"], CLR["blue"], CLR["amber"], CLR["purple"], CLR["red"], CLR["green"]],
+            legend=dict(bgcolor="rgba(0,0,0,0)"),
+        ))
+    pio.templates.default = "finance_dark"
+
+
+def hero(art):
+    """Header dạng terminal: tiêu đề + mô tả + badge accuracy VN/US + chỉ báo live."""
+    badges = []
+    for mkt, cls in [("VN", ""), ("US", "us")]:
+        if mkt in art:
+            acc = art[mkt]["metrics"]["accuracy"] * 100
+            badges.append(
+                f'<div class="badge {cls}"><span class="b-lab">{mkt} ACC</span>'
+                f'<span class="b-val">{acc:.1f}%</span></div>')
+    badges.append('<span class="live"><span class="dot"></span>live</span>')
+    st.markdown(
+        '<div class="hero"><div class="hero-row"><div>'
+        '<div class="hero-title">▲ DỰ BÁO XU HƯỚNG GIÁ <span class="tk">CHỨNG KHOÁN</span></div>'
+        '<div class="hero-sub">PySpark + Machine Learning · 60 mã US &amp; VN · Dữ liệu 2013–2026</div>'
+        '</div><div class="hero-row" style="gap:10px;">' + "".join(badges) + '</div></div></div>',
+        unsafe_allow_html=True)
+
+
 # ── Cache loaders ───────────────────────────────────────────────────────────
 @st.cache_resource
 def load_artifacts():
@@ -74,67 +175,9 @@ def load_walkforward_export():
     return None
 
 
-def fetch_latest_data(ticker, market):
-    """Fetch latest OHLCV data from yfinance (US) or vnstock (VN).
-    Returns DataFrame with columns: time, open, high, low, close, volume, ticker
-    or None if fetch fails."""
-    try:
-        if market == 'US':
-            import yfinance as yf
-            # Fetch last 30 days to ensure we get new data
-            data = yf.download(ticker, period='1mo', progress=False, auto_adjust=True)
-            if data is None or len(data) == 0:
-                return None
-            data = data.reset_index()
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = [c[0] if isinstance(c, tuple) else c for c in data.columns]
-            col_map = {'Date': 'time', 'Open': 'open', 'High': 'high',
-                       'Low': 'low', 'Close': 'close', 'Volume': 'volume'}
-            data = data.rename(columns=col_map)
-            data = data[['time', 'open', 'high', 'low', 'close', 'volume']]
-            data['ticker'] = ticker
-            return data
-        else:  # VN
-            # Dữ liệu VN dùng trực tiếp từ các file csv/<ticker>.csv.
-            # Không gọi vnstock trong app để tránh rate limit và không cần tạo vietnam_stocks.csv.
-            return None
-    except Exception as e:
-        st.warning(f"Không thể tải dữ liệu mới cho {ticker}: {str(e)}")
-        return None
-
-
-def merge_with_csv(ticker, market, fresh_data):
-    """Merge fresh data with existing CSV data, keeping only unique dates."""
-    try:
-        csv_data = F.load_market_raw([ticker])
-        if csv_data is None or len(csv_data) == 0:
-            return fresh_data
-        
-        # Combine and remove duplicates (keep fresh data if same date)
-        combined = pd.concat([csv_data, fresh_data], ignore_index=True)
-        combined = combined.sort_values('time').reset_index(drop=True)
-        combined = combined.drop_duplicates(subset=['time', 'ticker'], keep='last')
-        return combined
-    except Exception:
-        return fresh_data
-
-
 @st.cache_data(show_spinner=False)
 def features_for(ticker, market):
     raw = F.load_market_raw([ticker])
-    df = F.compute_features(raw, market)
-    return df
-
-
-def features_for_fresh(ticker, market):
-    """Load features with fresh data (no cache). Used after data refresh."""
-    raw = F.load_market_raw([ticker])
-    
-    # Try to fetch fresh data
-    fresh = fetch_latest_data(ticker, market)
-    if fresh is not None and len(fresh) > 0:
-        raw = merge_with_csv(ticker, market, fresh)
-    
     df = F.compute_features(raw, market)
     return df
 
@@ -333,33 +376,124 @@ def _predict_for_tab(df, ticker, mkt, art):
     return d, f"XGBoost (acc={art[mkt]['metrics'].get('accuracy', 0):.3f})", float(ta)
 
 
+# ── Multi-model router (chọn model tốt nhất theo từng mã) ────────────────────
+MODEL_LABELS = {'LR': 'Logistic Regression', 'RF': 'Random Forest', 'GBT': 'Gradient Boosting',
+                'SVC': 'Linear SVC', 'XGB': 'XGBoost', 'ENS': 'Ensemble', 'GRU': 'GRU'}
+
+
+@st.cache_resource(show_spinner=False)
+def load_multi(market):
+    """Bundle đa model do train_multi_models.py xuất, hoặc None."""
+    p = ART_DIR / f"multi_models_{market}.pkl"
+    return joblib.load(p) if p.exists() else None
+
+
+@st.cache_data(show_spinner=False)
+def load_router(market):
+    """router_{market}.json: lựa chọn model/mã + metric test, hoặc None."""
+    p = ART_DIR / f"router_{market}.json"
+    return json.load(open(p, encoding='utf-8')) if p.exists() else None
+
+
+def _proba_with(model_name, bundle, X):
+    models = bundle['models']
+    if model_name == 'ENS':
+        return np.mean([models[m].predict_proba(X)[:, 1] for m in bundle['ens_members']], axis=0)
+    return models[model_name].predict_proba(X)[:, 1]
+
+
+@st.cache_data(show_spinner=False)
+def predict_series(ticker, market, model_name):
+    """Trả DataFrame features + cột prob_up theo model_name chỉ định
+    (LR/RF/GBT/SVC/XGB/ENS hoặc GRU)."""
+    df = features_for(ticker, market)
+    if model_name == 'GRU':
+        out = gru_prob_cached(ticker, market)
+        return df.merge(out, on='time', how='left') if out is not None else df.assign(prob_up=np.nan)
+    bundle = load_multi(market)
+    if bundle is None:
+        return df.assign(prob_up=np.nan)
+    feat = bundle['features']
+    d = df.copy()
+    d['prob_up'] = np.nan
+    mask = d[feat].notna().all(axis=1)
+    if mask.any():
+        X = bundle['scaler'].transform(d.loc[mask, feat].values.astype(np.float64))
+        d.loc[mask, 'prob_up'] = _proba_with(model_name, bundle, X)
+    return d
+
+
+def _router_pick(router, ticker):
+    """Model 'Auto' cho 1 mã = lựa chọn của router (hoặc global-best nếu mã không có)."""
+    if not router:
+        return None
+    return router['per_ticker'].get(ticker, {}).get('best_model') or router.get('global_best')
+
+
 def tab_predict(art):
     st.subheader("🔮 Dự báo xu hướng giá phiên kế tiếp")
     st.caption("Dự báo xác suất giá TĂNG vượt ngưỡng vào phiên giao dịch tiếp theo "
-               "(ngưỡng: VN ±2%, US ±1%). VN dùng **GRU**, US dùng **XGBoost** "
-               "(tùy artifact đã export từ notebook).")
+               "(ngưỡng: VN ±2%, US ±1%). Chọn **Auto** để dùng model tốt nhất cho mã đó "
+               "(LR/RF/GBT/SVC/XGB/Ensemble + GRU cho VN), hoặc chỉ định 1 model để so sánh.")
     c1, c2 = st.columns([1, 3])
     with c1:
         mkt = st.radio("Thị trường", ['VN', 'US'], horizontal=True, key="pred_mkt")
         tickers = F.VN_TICKERS if mkt == 'VN' else F.US_TICKERS
         ticker = st.selectbox("Chọn mã cổ phiếu", sorted(tickers),
                               format_func=lambda t: f"{t} — {NAMES.get(t, t)}", key="pred_tk")
-        
-        # Refresh button for real-time data
-        refresh_button = st.button("🔄 Cập nhật dữ liệu mới nhất", key="refresh_data")
-    
+
+        # Selector model: Auto (chọn theo mã) hoặc chỉ định 1 model cụ thể
+        router = load_router(mkt)
+        multi = load_multi(mkt)
+        chosen = None
+        if multi is not None and router is not None:
+            auto_pick = _router_pick(router, ticker)
+            opts = ['Auto'] + router['candidates']
+
+            def _mlabel(o, _ap=auto_pick):
+                if o == 'Auto':
+                    return f"Auto · tốt nhất cho mã ({MODEL_LABELS.get(_ap, _ap)})"
+                return MODEL_LABELS.get(o, o)
+            sel = st.selectbox("Model dự báo", opts, format_func=_mlabel, key="pred_model",
+                               help="Auto = model có Edge validation tốt nhất cho mã này "
+                                    "(đã regularize). Hoặc chọn tay để so sánh.")
+            chosen = auto_pick if sel == 'Auto' else sel
+
+        # Nút cập nhật dữ liệu THẬT (US + VN, ghi vào csv_demo) + hiển thị ngày dữ liệu hiện có
+        import update_data as U
+        ds = U.data_status()
+        _fmt = lambda d: d.date().isoformat() if d is not None else "—"
+        st.caption(f"Dữ liệu hiện có — US: **{_fmt(ds['us_latest'])}** · VN: **{_fmt(ds['vn_latest'])}**")
+        if st.button("🔄 Cập nhật dữ liệu mới nhất", key="refresh_data", use_container_width=True):
+            with st.spinner("Đang tải dữ liệu mới nhất (US + VN)..."):
+                bar = st.progress(0.0)
+                res = U.ensure_data_fresh(
+                    progress_cb=lambda l, f: bar.progress(min(max(f, 0.0), 1.0)),
+                    force=True)
+            st.cache_data.clear()  # xoá cache để nạp lại dữ liệu mới
+            if res.get("errors"):
+                st.warning(f"{len(res['errors'])} mã chưa tải được — thử lại sau.")
+            st.success(f"Đã cập nhật: +{res['us_added']} dòng US · +{res['vn_added']} dòng VN")
+            st.rerun()
+
     if mkt not in art:
         st.error(f"Chưa có model cho thị trường {mkt}. Chạy: python demo/train_models.py")
         return
     bundle = art[mkt]['bundle']
     feat = bundle['features']
-    
-    # US có thể tải dữ liệu mới; VN luôn đọc trực tiếp từ csv/<ticker>.csv
-    if refresh_button and mkt == 'US':
-        df = features_for_fresh(ticker, mkt)
+
+    df = features_for(ticker, mkt)
+    if chosen is not None:
+        df_p = predict_series(ticker, mkt, chosen)
+        pinfo = router['per_ticker'].get(ticker, {})
+        edge_t = pinfo.get('test_edge')
+        suffix = f" · Edge test {edge_t*100:+.1f}%" if edge_t is not None else ""
+        model_short = MODEL_LABELS.get(chosen, chosen)
+        model_label = f"{model_short}{suffix}"
+        ta_val = float(pinfo.get('test_acc') or 0.0)
     else:
-        df = features_for(ticker, mkt)
-    df_p, model_label, ta_val = _predict_for_tab(df, ticker, mkt, art)
+        df_p, model_label, ta_val = _predict_for_tab(df, ticker, mkt, art)
+        model_short = model_label.split(' ')[0]
     valid = df_p.dropna(subset=['prob_up'])
     if valid.empty:
         st.warning("Không đủ dữ liệu để tính features cho mã này.")
@@ -393,11 +527,11 @@ def tab_predict(art):
                 f"Mô hình: **{model_label}** · Phiên gần nhất: {row['time'].date()} · "
                 f"Dự báo cho phiên kế tiếp: {forecast_date}"
             )
-            st.metric(f"Độ chính xác {model_label.split(' ')[0]} trên mã này",
+            st.metric(f"Độ chính xác ({model_short}) trên mã này",
                       f"{ta_val*100:.1f}%")
 
     st.divider()
-    st.markdown(f"**Backtest gần đây** — dự báo (**{model_label.split(' ')[0]}**) "
+    st.markdown(f"**Backtest gần đây** — dự báo (**{model_short}**) "
                 "từ ngày hiện tại về trước (40 phiên gần nhất):")
     st.caption("⏳ = Chưa có kết quả thực tế (dự báo cho tương lai) · ✅/❌ = So khớp với kết quả đã biết")
     
@@ -615,7 +749,8 @@ def tab_performance(art):
             f"thị trường VN kém hiệu quả hơn nên còn tồn tại tín hiệu khai thác được.")
 
     st.divider()
-    tab1, tab2, tab3 = st.tabs(["Confusion Matrix & ROC", "Độ chính xác theo mã", "Tầm quan trọng features"])
+    tab1, tab2, tab3, tab4 = st.tabs(["Confusion Matrix & ROC", "Độ chính xác theo mã",
+                                      "Tầm quan trọng features", "🧭 Model theo mã"])
     with tab1:
         cc = st.columns(2)
         for i, mkt in enumerate(['VN', 'US']):
@@ -643,17 +778,44 @@ def tab_performance(art):
                           yaxis_title="True Positive Rate", height=380, margin=dict(l=10, r=10, t=40, b=10))
         st.plotly_chart(roc, use_container_width=True)
     with tab2:
+        st.caption(
+            "**Accuracy** = tỉ lệ đoán đúng. **Edge** = Accuracy − Naive (đoán theo lớp đa số "
+            "của riêng mã đó). Edge **> 0** ⇒ model thực sự đoán tốt hơn đoán mò; Edge **≈ 0** "
+            "dù Accuracy cao ⇒ \"cao giả\" do nhãn lệch (mã ít biến động vượt ngưỡng).")
         for mkt in ['VN', 'US']:
             if mkt not in art:
                 continue
-            ta = art[mkt]['metrics']['ticker_acc']
-            s = pd.Series(ta).sort_values(ascending=True)
-            bar = go.Figure(go.Bar(x=s.values * 100, y=[f"{t} ({NAMES.get(t,t)})" for t in s.index],
-                                   orientation='h', marker_color='#42a5f5'))
-            bar.add_vline(x=50, line=dict(color='red', dash='dot'))
-            bar.update_layout(title=f"Độ chính xác theo mã — {mkt}", xaxis_title="Accuracy (%)",
-                              height=max(300, len(s) * 20), margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(bar, use_container_width=True)
+            m = art[mkt]['metrics']
+            ta = m['ticker_acc']
+            te = m.get('ticker_edge')  # có thể thiếu nếu metrics cũ (chưa train lại)
+            # Sắp xếp theo Edge nếu có, không thì theo Accuracy
+            order = (pd.Series(te) if te else pd.Series(ta)).sort_values(ascending=True)
+            labels = [f"{t} ({NAMES.get(t, t)})" for t in order.index]
+            st.markdown(f"#### {'🇻🇳 Việt Nam' if mkt == 'VN' else '🇺🇸 Hoa Kỳ'}")
+            cc = st.columns(2)
+            with cc[0]:
+                accv = pd.Series(ta).reindex(order.index) * 100
+                bar = go.Figure(go.Bar(x=accv.values, y=labels, orientation='h',
+                                       marker_color=CLR['blue']))
+                bar.add_vline(x=50, line=dict(color=CLR['red'], dash='dot'),
+                              annotation_text='50%', annotation_position='top')
+                bar.update_layout(title="Độ chính xác theo mã", xaxis_title="Accuracy (%)",
+                                  height=max(320, len(order) * 22), margin=dict(l=10, r=10, t=40, b=10))
+                st.plotly_chart(bar, use_container_width=True)
+            with cc[1]:
+                if te:
+                    edgev = (order * 100)
+                    colors = [CLR['teal'] if v > 0 else CLR['red'] for v in edgev.values]
+                    bar = go.Figure(go.Bar(x=edgev.values, y=labels, orientation='h',
+                                           marker_color=colors))
+                    bar.add_vline(x=0, line=dict(color=CLR['muted'], dash='dot'))
+                    bar.update_layout(title="Edge vs Naive theo mã",
+                                      xaxis_title="Edge (điểm %)",
+                                      height=max(320, len(order) * 22), margin=dict(l=10, r=10, t=40, b=10))
+                    st.plotly_chart(bar, use_container_width=True)
+                else:
+                    st.info("Chưa có dữ liệu Edge theo mã. Chạy lại: "
+                            "`python demo/train_models.py` để sinh `ticker_edge`.")
     with tab3:
         cc = st.columns(2)
         for i, mkt in enumerate(['VN', 'US']):
@@ -667,16 +829,125 @@ def tab_performance(art):
                 bar.update_layout(title=f"Top features — {mkt}", height=420,
                                   margin=dict(l=10, r=10, t=40, b=10))
                 st.plotly_chart(bar, use_container_width=True)
+    with tab4:
+        tab_model_router()
+
+
+def tab_model_router():
+    """So sánh model zoo & lựa chọn model tốt nhất theo từng mã (multi-model router)."""
+    st.markdown("#### 🧭 Chọn model tốt nhất cho từng mã")
+    st.caption(
+        "Train **6 model** (LR, RF, GBT, SVC, XGBoost, Ensemble — khớp notebook; thêm **GRU** cho VN) "
+        "trên toàn thị trường, rồi với mỗi mã chọn model có **Edge cao nhất trên tập validation "
+        "(2022–2023)**, báo cáo trên **test (≥2024)** — out-of-time, không data snooping.")
+    have = any(load_router(m) for m in ['VN', 'US'])
+    if not have:
+        st.warning("Chưa có dữ liệu router. Chạy: `python demo/train_multi_models.py`")
+        return
+
+    # ── Đối chứng trung thực: routed (per-ticker) vs 1 model global ──
+    st.markdown("##### 📐 Định tuyến theo mã có thực sự tốt hơn dùng 1 model?")
+    rows = []
+    for mkt in ['VN', 'US']:
+        r = load_router(mkt)
+        if not r:
+            continue
+        me = r['mean_test_edge']
+        rows.append({'Thị trường': mkt, 'Global-best (val)': MODEL_LABELS.get(r['global_best'], r['global_best']),
+                     'Edge — 1 model global': f"{me['global']*100:+.2f}%",
+                     'Edge — router (theo mã)': f"{me['reg']*100:+.2f}%",
+                     'Chênh lệch': f"{(me['reg']-me['global'])*100:+.2f} đpt"})
+    st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+    st.info(
+        "**Kết luận khoa học:** chọn model riêng theo mã **không** vượt trội hơn dùng 1 model tốt "
+        "cho cả thị trường — chênh lệch nằm trong khoảng nhiễu. Lý do: mỗi mã chỉ có ~130 phiên "
+        "validation nên 'model thắng' phần lớn là *may rủi*, không lặp lại ở test (overfitting khi "
+        "lựa chọn). Vì vậy router đã **regularize**: chỉ đổi model khi nó vượt ≥5 điểm % edge.")
+
+    st.divider()
+    for mkt in ['VN', 'US']:
+        r = load_router(mkt)
+        if not r:
+            continue
+        st.markdown(f"##### {'🇻🇳 Việt Nam' if mkt == 'VN' else '🇺🇸 Hoa Kỳ'} · "
+                    f"global-best **{MODEL_LABELS.get(r['global_best'], r['global_best'])}**")
+        cc = st.columns([1, 1.4])
+        with cc[0]:
+            wins = r.get('model_wins', {})
+            ws = pd.Series(wins).sort_values(ascending=True)
+            bar = go.Figure(go.Bar(x=ws.values, y=[MODEL_LABELS.get(k, k) for k in ws.index],
+                                   orientation='h', marker_color=CLR['teal']))
+            bar.update_layout(title="Số mã mỗi model được chọn", xaxis_title="Số mã",
+                              height=max(260, len(ws) * 42), margin=dict(l=10, r=10, t=40, b=10))
+            st.plotly_chart(bar, use_container_width=True)
+        with cc[1]:
+            pt = r['per_ticker']
+            tbl = pd.DataFrame([
+                {'Mã': t, 'Model chọn': MODEL_LABELS.get(v['best_model'], v['best_model']),
+                 'Khác global?': '✓' if v.get('overridden') else '',
+                 'Edge test': f"{v['test_edge']*100:+.1f}%",
+                 'Acc test': f"{v['test_acc']*100:.1f}%"}
+                for t, v in pt.items()])
+            if not tbl.empty:
+                tbl = tbl.sort_values('Edge test', ascending=False)
+            st.dataframe(tbl, use_container_width=True, hide_index=True, height=360)
 
 
 # ── Main ────────────────────────────────────────────────────────────────────
+def sync_data_on_startup():
+    """Khi mở app: kiểm tra csv_demo có mới nhất không, nếu cũ thì tự tải bổ sung
+    (US + VN + VNINDEX). Chỉ chạy 1 lần / phiên app và tối đa 1 lần / ngày (marker).
+    Tắt bằng biến môi trường DEMO_AUTO_UPDATE=0."""
+    if st.session_state.get("_data_sync_done"):
+        return
+    st.session_state["_data_sync_done"] = True
+
+    import update_data as U
+    status = U.data_status()
+    # Đã đồng bộ hôm nay hoặc dữ liệu đã mới -> không làm phiền người dùng
+    if status["synced_today"] or (not status["us_stale"] and not status["vn_stale"]):
+        return
+
+    with st.status("🔄 Đang kiểm tra & cập nhật dữ liệu mới nhất...", expanded=True) as box:
+        bar = st.progress(0.0)
+        last = {"t": time.time()}
+
+        def cb(label, frac):
+            bar.progress(min(max(frac, 0.0), 1.0))
+            # Cập nhật nhãn tối đa ~2 lần/giây để đỡ giật
+            if time.time() - last["t"] > 0.4:
+                box.update(label=f"🔄 {label}")
+                last["t"] = time.time()
+
+        try:
+            res = U.ensure_data_fresh(progress_cb=cb)
+        except Exception as e:
+            box.update(label=f"⚠️ Bỏ qua cập nhật (lỗi: {e})", state="error")
+            return
+
+        bar.progress(1.0)
+        if res.get("updated"):
+            st.cache_data.clear()  # xoá cache features để nạp dữ liệu mới
+            box.update(
+                label=f"✅ Đã cập nhật: +{res['us_added']} dòng US, +{res['vn_added']} dòng VN",
+                state="complete", expanded=False)
+        else:
+            box.update(label=f"✅ Dữ liệu đã mới nhất ({res.get('reason','')})",
+                       state="complete", expanded=False)
+        if res.get("errors"):
+            st.warning("Một số mã không tải được (sẽ thử lại lần mở sau): "
+                       + ", ".join(str(x) for x in res["errors"][:5])
+                       + (" ..." if len(res["errors"]) > 5 else ""))
+
+
 def main():
-    st.title("📈 Phân tích & Dự báo Xu hướng Giá Chứng khoán")
-    st.caption("Đồ án tốt nghiệp · PySpark + Machine Learning · 60 mã cổ phiếu US & VN · Dữ liệu 2013–2026")
+    inject_theme()
+    sync_data_on_startup()
     art = load_artifacts()
     if not art:
         st.error("Chưa có model. Hãy chạy trước: `python demo/train_models.py`")
         st.stop()
+    hero(art)
     with st.sidebar:
         st.header("Giới thiệu")
         st.markdown(

@@ -1,0 +1,11 @@
+# Theme "Finance terminal" (nền tối) cho app demo
+[theme]
+base = "dark"
+primaryColor = "#26C6A6"            # accent teal
+backgroundColor = "#0E1117"         # nền chính
+secondaryBackgroundColor = "#161B26" # sidebar / card
+textColor = "#E6EDF3"
+font = "sans serif"
+
+[server]
+runOnSave = true

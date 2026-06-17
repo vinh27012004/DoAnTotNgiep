@@ -93,6 +93,15 @@ def train_market(market):
     ticker_acc = (df_ts_c.groupby('ticker')
                   .apply(lambda gp: accuracy_score(gp['label'], gp['pred']))
                   .sort_values(ascending=False))
+
+    # Edge theo từng mã = acc(mã) − naive(mã); naive = đoán theo lớp đa số RIÊNG mã đó.
+    # Edge > 0: model thực sự đoán tốt hơn đoán mò; ~0: accuracy "cao giả" do lệch nhãn.
+    def _ticker_edge(gp):
+        a = accuracy_score(gp['label'], gp['pred'])
+        nv = max(float((gp['label'] == 0).mean()), float((gp['label'] == 1).mean()))
+        return a - nv
+    ticker_edge = df_ts_c.groupby('ticker').apply(_ticker_edge)
+
     fi = pd.Series(model.feature_importances_, index=feat).sort_values(ascending=False)
 
     # Naive baseline (luôn đoán theo lớp đa số) để tính "edge"
@@ -126,6 +135,7 @@ def train_market(market):
         'best_params': best,
         'confusion_matrix': cm,
         'ticker_acc': {k: float(v) for k, v in ticker_acc.items()},
+        'ticker_edge': {k: float(v) for k, v in ticker_edge.items()},
         'feature_importance': {k: float(v) for k, v in fi.head(15).items()},
         'roc': _roc_points(y_ts, y_prob),
         'label_dist_test': {'down': int(np.sum(y_ts == 0)), 'up': int(np.sum(y_ts == 1))},

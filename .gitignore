@@ -2,3 +2,4 @@
 __pycache__/
 demo/artifacts/
 demo/_*.txt
+csv_demo/.last_sync.json
