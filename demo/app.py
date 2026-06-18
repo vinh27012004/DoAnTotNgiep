@@ -16,7 +16,6 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.io as pio
 from plotly.subplots import make_subplots
-from sklearn.linear_model import LinearRegression
 
 # ── Bảng màu "Finance terminal" ─────────────────────────────────────────────
 CLR = {
@@ -214,65 +213,6 @@ def price_chart(df, ticker):
     fig.update_layout(height=720, xaxis_rangeslider_visible=False, hovermode='x unified',
                       margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation='h', y=1.02))
     return fig
-
-
-def forecast_prices(df, horizon=5, lags=10, train_window=1000):
-    """Simple autoregressive forecast using linear regression on past `lags` closes.
-    Returns list of (date, predicted_close).
-    """
-    ser = df.sort_values('time')['close'].reset_index(drop=True)
-    if len(ser) < lags + 1:
-        return []
-    X, y = [], []
-    for i in range(lags, len(ser)):
-        X.append(ser.iloc[i - lags:i].values.astype(np.float64))
-        y.append(ser.iloc[i])
-    X = np.vstack(X)
-    y = np.asarray(y, dtype=np.float64)
-    # restrict training window to recent data for stability
-    if train_window is not None and len(y) > train_window:
-        X = X[-train_window:]
-        y = y[-train_window:]
-    model = LinearRegression()
-    try:
-        model.fit(X, y)
-    except Exception:
-        return []
-
-    last_window = ser.iloc[-lags:].values.astype(np.float64).tolist()
-    preds = []
-    cur = list(last_window)
-    last_date = pd.Timestamp(df['time'].iloc[-1]).normalize()
-    for i in range(1, horizon + 1):
-        xi = np.array(cur[-lags:]).reshape(1, -1)
-        p = float(model.predict(xi)[0])
-        preds.append((pd.Timestamp(last_date + pd.offsets.BDay(i)).date(), p))
-        cur.append(p)
-    return preds
-
-
-def knn_trend_probability(df, feat_cols, scaler, row, horizon=5, k=200, market='US'):
-    """Estimate probability of upward trend over `horizon` business days by K-NN on past feature vectors.
-    Uses `scaler` to normalize features. Returns probability (0..1) and neighbor sample counts.
-    """
-    dff = df.sort_values('time').copy()
-    g = dff.groupby('ticker', group_keys=False)
-    # compute horizon future close and return per ticker
-    dff[f'future_close_{horizon}'] = g['close'].shift(-horizon)
-    dff[f'future_return_{horizon}'] = (dff[f'future_close_{horizon}'] - dff['close']) / dff['close']
-
-    hist = dff.dropna(subset=feat_cols + [f'future_return_{horizon}']).copy()
-    if hist.empty:
-        return None, 0
-    X = scaler.transform(hist[feat_cols].values.astype(np.float64))
-    xr = scaler.transform(row[feat_cols].values.reshape(1, -1))
-    # distances and neighbors
-    dist = np.linalg.norm(X - xr, axis=1)
-    idx = np.argsort(dist)[:min(k, len(dist))]
-    thr = 0.01 if market == 'US' else 0.02
-    neigh_returns = hist.iloc[idx][f'future_return_{horizon}'].values
-    prob = float(np.mean(neigh_returns > thr))
-    return prob, len(idx)
 
 
 # ── Tabs ────────────────────────────────────────────────────────────────────
@@ -479,8 +419,6 @@ def tab_predict(art):
     if mkt not in art:
         st.error(f"Chưa có model cho thị trường {mkt}. Chạy: python demo/train_models.py")
         return
-    bundle = art[mkt]['bundle']
-    feat = bundle['features']
 
     df = features_for(ticker, mkt)
     if chosen is not None:
@@ -562,77 +500,6 @@ def tab_predict(art):
         
         # Sắp xếp từ mới → cũ (ngày hiện tại trên cùng)
         st.dataframe(tbl.iloc[::-1], use_container_width=True, hide_index=True, height=320)
-
-    st.divider()
-    st.subheader("🛠️ Dự báo giá đóng cửa tương lai (giá trị)")
-    c3, c4 = st.columns([1, 3])
-    with c3:
-        horizon = st.slider("Số phiên dự báo", 1, 30, 5, key='forecast_horizon')
-        method = st.selectbox("Phương pháp", ['AR Linear', 'Naive (last close)'], key='forecast_method')
-        do_forecast = st.button("Tạo dự báo giá")
-    with c4:
-        st.caption("Mô hình AR tuyến tính dùng các giá đóng cửa trước đó làm đặc trưng; đơn giản và chạy nhanh.")
-
-    if do_forecast:
-        ser_df = df[['time', 'close']].dropna().sort_values('time')
-        if method == 'Naive (last close)':
-            last = float(ser_df['close'].iloc[-1])
-            preds = []
-            last_date = pd.Timestamp(ser_df['time'].iloc[-1]).normalize()
-            for i in range(1, horizon + 1):
-                preds.append((pd.Timestamp(last_date + pd.offsets.BDay(i)).date(), last))
-        else:
-            preds = forecast_prices(ser_df, horizon=horizon, lags=10)
-
-        if not preds:
-            st.warning("Không thể tạo dự báo — dữ liệu không đủ hoặc mô hình lỗi.")
-        else:
-            pred_df = pd.DataFrame(preds, columns=['date', 'pred_close'])
-            pred_df['pred_close'] = pred_df['pred_close'].round(2)
-            last_hist = ser_df.tail(120).copy()
-            last_hist['date'] = last_hist['time'].dt.date
-
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(x=last_hist['date'], y=last_hist['close'], mode='lines', name='Giá lịch sử'))
-            fig.add_trace(go.Scatter(x=pred_df['date'], y=pred_df['pred_close'], mode='lines+markers', name='Dự báo', marker=dict(symbol='circle', size=8)))
-            fig.update_layout(title=f'Dự báo {horizon} phiên — phương pháp: {method}', height=420)
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.markdown("**Bảng dự báo**")
-            st.dataframe(pred_df.rename(columns={'date': 'Ngày', 'pred_close': 'Giá dự báo'}), use_container_width=True, hide_index=True)
-
-    st.divider()
-    st.subheader("🔮 Dự báo XU HƯỚNG trong N phiên (xác suất)")
-    c5, c6 = st.columns([1, 3])
-    with c5:
-        horizon_trend = st.slider("Số phiên để đánh giá xu hướng (horizon)", 1, 30, 5, key='trend_horizon')
-        knn_k = st.number_input("Số neighbors (K)", min_value=10, max_value=2000, value=200, step=10, key='knn_k')
-        do_trend = st.button("Dự báo xu hướng")
-    with c6:
-        st.caption("Ước lượng xác suất 'TĂNG' trong H phiên tiếp theo dựa trên các phiên lịch sử có features tương tự.")
-
-    if do_trend:
-        prob_trend, n_used = knn_trend_probability(df, feat, bundle['scaler'], row, horizon=horizon_trend, k=int(knn_k), market=mkt)
-        if prob_trend is None:
-            st.warning("Không đủ dữ liệu lịch sử để ước lượng xu hướng cho horizon này.")
-        else:
-            pred_tr = prob_trend >= 0.5
-            g = go.Figure(go.Indicator(
-                mode="gauge+number", value=prob_trend * 100,
-                title={'text': f"Xác suất TĂNG — trong {horizon_trend} phiên"},
-                number={'suffix': "%"},
-                gauge={'axis': {'range': [0, 100]},
-                       'bar': {'color': '#26a69a' if pred_tr else '#ef5350'},
-                       'steps': [{'range': [0, 50], 'color': '#ffebee'},
-                                 {'range': [50, 100], 'color': '#e8f5e9'}],
-                       'threshold': {'line': {'color': 'black', 'width': 3}, 'value': 50}}))
-            g.update_layout(height=260, margin=dict(l=10, r=10, t=30, b=10))
-            st.plotly_chart(g, use_container_width=True)
-            if pred_tr:
-                st.success(f"📈 DỰ BÁO XU HƯỚNG: TĂNG · Xác suất {prob_trend*100:.1f}%")
-            else:
-                st.error(f"📉 DỰ BÁO XU HƯỚNG: KHÔNG TĂNG/ GIẢM · Xác suất tăng {prob_trend*100:.1f}%")
-            st.metric("Số phiên lịch sử dùng (neighbors)", f"{n_used}")
 
 
 def _walkforward_source(art, mkt):

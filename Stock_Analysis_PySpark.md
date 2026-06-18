@@ -99,14 +99,21 @@ data_dir = str(Path("csv").resolve())
 csv_files = glob.glob(os.path.join(data_dir, "*.csv"))
 
 print(f"📂 Tìm thấy {len(csv_files)} file CSV")
-print(f"📍 Thư mục: {data_dir}\n")
+print(f"📍 Thư mục: {data_dir}")
 
-# Đọc từng file và thêm cột ticker
+# Chỉ nạp file giá cổ phiếu (đủ cột OHLCV). File macro/lãi suất như IRX, TNX
+# chỉ có [time, rate] và được join riêng ở bước sau -> bỏ khỏi union ticker.
+OHLCV = ["time", "open", "high", "low", "close", "volume"]
+
 dataframes = []
 for csv_file in csv_files:
     ticker = os.path.basename(csv_file).replace('.csv', '')
     df_temp = spark.read.csv(csv_file, header=True, inferSchema=True)
-    df_temp = df_temp.withColumn("ticker", lit(ticker))
+    if not set(OHLCV).issubset(set(df_temp.columns)):
+        print(f"⏭  Bỏ qua (không phải OHLCV): {ticker:6s} -> {df_temp.columns}")
+        continue
+    # select đúng thứ tự cột để union an toàn, rồi thêm cột ticker
+    df_temp = df_temp.select(*OHLCV).withColumn("ticker", lit(ticker))
     dataframes.append(df_temp)
     print(f"✓ Loaded: {ticker:6s} - {df_temp.count():,d} rows")
 
@@ -115,79 +122,79 @@ df_raw = dataframes[0]
 for df_temp in dataframes[1:]:
     df_raw = df_raw.union(df_temp)
 
-print(f"\n✓ Tổng dữ liệu: {df_raw.count():,d} rows từ {len(dataframes)} cổ phiếu")
+print(f"✓ Tổng dữ liệu: {df_raw.count():,d} rows từ {len(dataframes)} cổ phiếu")
 ```
 
-    📂 Tìm thấy 65 file CSV
+    📂 Tìm thấy 67 file CSV
     📍 Thư mục: D:\CODE\DoAnTotNgiep\csv
-    
-    ✓ Loaded: AAPL   - 3,315 rows
-    ✓ Loaded: ACB    - 3,182 rows
-    ✓ Loaded: AMD    - 3,315 rows
-    ✓ Loaded: AMZN   - 3,315 rows
-    ✓ Loaded: BA     - 3,315 rows
-    ✓ Loaded: BAC    - 3,315 rows
+    ✓ Loaded: AAPL   - 3,317 rows
+    ✓ Loaded: ACB    - 3,186 rows
+    ✓ Loaded: AMD    - 3,317 rows
+    ✓ Loaded: AMZN   - 3,317 rows
+    ✓ Loaded: BA     - 3,317 rows
+    ✓ Loaded: BAC    - 3,317 rows
     ✓ Loaded: BCM    - 2,004 rows
     ✓ Loaded: BID    - 3,022 rows
-    ✓ Loaded: BVH    - 3,182 rows
-    ✓ Loaded: COST   - 3,315 rows
-    ✓ Loaded: CTG    - 3,182 rows
-    ✓ Loaded: CVX    - 3,315 rows
-    ✓ Loaded: DHG    - 3,182 rows
-    ✓ Loaded: DIS    - 3,315 rows
-    ✓ Loaded: F      - 3,315 rows
-    ✓ Loaded: FPT    - 3,182 rows
-    ✓ Loaded: GAS    - 3,182 rows
-    ✓ Loaded: GM     - 3,315 rows
-    ✓ Loaded: GMD    - 3,182 rows
-    ✓ Loaded: GOOGL  - 3,315 rows
-    ✓ Loaded: GS     - 3,315 rows
+    ✓ Loaded: BVH    - 3,186 rows
+    ✓ Loaded: COST   - 3,317 rows
+    ✓ Loaded: CTG    - 3,186 rows
+    ✓ Loaded: CVX    - 3,317 rows
+    ✓ Loaded: DHG    - 3,186 rows
+    ✓ Loaded: DIS    - 3,317 rows
+    ✓ Loaded: F      - 3,317 rows
+    ✓ Loaded: FPT    - 3,186 rows
+    ✓ Loaded: GAS    - 3,186 rows
+    ✓ Loaded: GM     - 3,317 rows
+    ✓ Loaded: GMD    - 3,186 rows
+    ✓ Loaded: GOOGL  - 3,317 rows
+    ✓ Loaded: GS     - 3,317 rows
     ✓ Loaded: HDB    - 2,039 rows
-    ✓ Loaded: HPG    - 3,182 rows
-    ✓ Loaded: HSG    - 3,182 rows
-    ✓ Loaded: INTC   - 3,315 rows
-    ✓ Loaded: JPM    - 3,315 rows
-    ✓ Loaded: KDH    - 3,182 rows
+    ✓ Loaded: HPG    - 3,186 rows
+    ✓ Loaded: HSG    - 3,186 rows
+    ✓ Loaded: INTC   - 3,317 rows
+    ⏭  Bỏ qua (không phải OHLCV): IRX    -> ['time', 'rate']
+    ✓ Loaded: JPM    - 3,317 rows
+    ✓ Loaded: KDH    - 3,186 rows
     ✓ Loaded: LCID   - 1,373 rows
-    ✓ Loaded: LLY    - 3,315 rows
-    ✓ Loaded: MA     - 3,315 rows
-    ✓ Loaded: MBB    - 3,182 rows
-    ✓ Loaded: META   - 3,315 rows
-    ✓ Loaded: MSFT   - 3,315 rows
-    ✓ Loaded: MSN    - 3,182 rows
+    ✓ Loaded: LLY    - 3,317 rows
+    ✓ Loaded: MA     - 3,317 rows
+    ✓ Loaded: MBB    - 3,186 rows
+    ✓ Loaded: META   - 3,317 rows
+    ✓ Loaded: MSFT   - 3,317 rows
+    ✓ Loaded: MSN    - 3,186 rows
     ✓ Loaded: MWG    - 2,912 rows
-    ✓ Loaded: NFLX   - 3,315 rows
-    ✓ Loaded: NKG    - 3,182 rows
-    ✓ Loaded: NLG    - 3,182 rows
-    ✓ Loaded: NVDA   - 3,315 rows
+    ✓ Loaded: NFLX   - 3,317 rows
+    ✓ Loaded: NKG    - 3,186 rows
+    ✓ Loaded: NLG    - 3,186 rows
+    ✓ Loaded: NVDA   - 3,317 rows
     ✓ Loaded: PLX    - 2,220 rows
-    ✓ Loaded: PNJ    - 3,182 rows
+    ✓ Loaded: PNJ    - 3,186 rows
     ✓ Loaded: POW    - 1,993 rows
-    ✓ Loaded: REE    - 3,182 rows
+    ✓ Loaded: REE    - 3,186 rows
     ✓ Loaded: RIVN   - 1,084 rows
     ✓ Loaded: SAB    - 2,311 rows
-    ✓ Loaded: SP500  - 3,315 rows
-    ✓ Loaded: SSI    - 3,182 rows
-    ✓ Loaded: STB    - 3,182 rows
+    ✓ Loaded: SP500  - 3,317 rows
+    ✓ Loaded: SSI    - 3,186 rows
+    ✓ Loaded: STB    - 3,186 rows
     ✓ Loaded: TCB    - 1,941 rows
-    ✓ Loaded: TSLA   - 3,315 rows
-    ✓ Loaded: UNH    - 3,315 rows
-    ✓ Loaded: V      - 3,315 rows
-    ✓ Loaded: VCB    - 3,182 rows
-    ✓ Loaded: VHM    - 3,182 rows
-    ✓ Loaded: VIC    - 3,182 rows
-    ✓ Loaded: VIX    - 3,315 rows
+    ⏭  Bỏ qua (không phải OHLCV): TNX    -> ['time', 'rate']
+    ✓ Loaded: TSLA   - 3,317 rows
+    ✓ Loaded: UNH    - 3,317 rows
+    ✓ Loaded: V      - 3,317 rows
+    ✓ Loaded: VCB    - 3,186 rows
+    ✓ Loaded: VHM    - 3,186 rows
+    ✓ Loaded: VIC    - 3,186 rows
+    ✓ Loaded: VIX    - 3,317 rows
     ✓ Loaded: VJC    - 2,257 rows
-    ✓ Loaded: VNINDEX - 3,301 rows
-    ✓ Loaded: VNM    - 3,182 rows
+    ✓ Loaded: VNINDEX - 3,287 rows
+    ✓ Loaded: VNM    - 3,186 rows
     ✓ Loaded: VPB    - 2,138 rows
     ✓ Loaded: VRE    - 2,082 rows
-    ✓ Loaded: VZ     - 3,315 rows
-    ✓ Loaded: WFC    - 3,315 rows
-    ✓ Loaded: WMT    - 3,315 rows
-    ✓ Loaded: XOM    - 3,315 rows
-    
-    ✓ Tổng dữ liệu: 196,816 rows từ 65 cổ phiếu
+    ✓ Loaded: VZ     - 3,317 rows
+    ✓ Loaded: WFC    - 3,317 rows
+    ✓ Loaded: WMT    - 3,317 rows
+    ✓ Loaded: XOM    - 3,317 rows
+    ✓ Tổng dữ liệu: 196,948 rows từ 65 cổ phiếu
     
 
 
@@ -235,16 +242,16 @@ print(f"Tổng {len(ticker_list)} cổ phiếu: {', '.join(ticker_list)}")
     +----------+------------------+------------------+------------------+------------------+---------+------+
     |time      |open              |high              |low               |close             |volume   |ticker|
     +----------+------------------+------------------+------------------+------------------+---------+------+
-    |2013-01-02|16.726062542519166|16.761700040600363|16.357910009727583|16.581398010253906|560518000|AAPL  |
-    |2013-01-03|16.54666598301802 |16.600726265962198|16.338881397575303|16.372102737426758|352965200|AAPL  |
-    |2013-01-04|16.217179615848526|16.267314076991514|15.880736945619178|15.916072845458984|594333600|AAPL  |
-    |2013-01-07|15.765069599331184|15.985538370818867|15.559701008828565|15.822452545166016|484156400|AAPL  |
-    |2013-01-08|15.982814573333348|16.063754222621842|15.742413395470727|15.865029335021973|458707200|AAPL  |
-    |2013-01-09|15.780160698221348|15.855966401880957|15.583550390363834|15.617074966430664|407604400|AAPL  |
-    |2013-01-10|15.962888741850808|15.968022674558567|15.569366267464405|15.810675621032715|601146000|AAPL  |
-    |2013-01-11|15.734867571100388|15.865336862975507|15.67506847360663 |15.713726997375488|350506800|AAPL  |
-    |2013-01-14|15.181571101548268|15.327142112488126|15.055632572023544|15.153485298156738|734207600|AAPL  |
-    |2013-01-15|15.049293101024734|15.070132051290738|14.598689511646727|14.67540168762207 |876772400|AAPL  |
+    |2013-01-02|16.726068314487094|16.76170582486638 |16.357915654650395|16.581403732299805|560518000|AAPL  |
+    |2013-01-03|16.546671766073732|16.600732067911963|16.33888710801035 |16.372108459472656|352965200|AAPL  |
+    |2013-01-04|16.217170870401674|16.26730530450863 |15.880728381605945|15.916064262390137|594333600|AAPL  |
+    |2013-01-07|15.765061047390368|15.985529699282264|15.559692568292268|15.822443962097168|484156400|AAPL  |
+    |2013-01-08|15.982810730314986|16.06375036014179 |15.742409610256086|15.865025520324709|458707200|AAPL  |
+    |2013-01-09|15.780157807321356|15.855963497093482|15.583547535482532|15.617072105407717|407604400|AAPL  |
+    |2013-01-10|15.962882964717418|15.968016895567152|15.56936063275084 |15.810669898986816|601146000|AAPL  |
+    |2013-01-11|15.734865661185692|15.865334937224311|15.675066570950412|15.713725090026855|350506800|AAPL  |
+    |2013-01-14|15.181567279780758|15.327138254074962|15.055628781959458|15.153481483459473|734207600|AAPL  |
+    |2013-01-15|15.049294078996216|15.070133030616429|14.59869046033594 |14.675402641296388|876772400|AAPL  |
     +----------+------------------+------------------+------------------+------------------+---------+------+
     only showing top 10 rows
     
@@ -254,10 +261,10 @@ print(f"Tổng {len(ticker_list)} cổ phiếu: {', '.join(ticker_list)}")
     +-------+------------------+------------------+------------------+------------------+-------------------+
     |summary|              open|              high|               low|             close|             volume|
     +-------+------------------+------------------+------------------+------------------+-------------------+
-    |  count|            196816|            196816|            196816|            196816|             196816|
-    |   mean|129.18701516204695|130.34584707172837|  127.992190970525|129.20728907465482|9.842966735425474E7|
-    | stddev|478.08855145962644| 480.6782528525168|475.30003803298104| 478.1826404862831| 5.37941567627402E8|
-    |    min|0.2758871841480986|0.2800393674811535|0.2747338435461983|0.2763485610485077|                  0|
+    |  count|            196948|            196948|            196948|            196948|             196948|
+    |   mean|129.20722646307902| 130.3658763273034|128.01238527019174|129.22711435852582|9.837350812259582E7|
+    | stddev| 478.4302602366714|481.02146047910645| 475.6394083719631| 478.5218948000567|5.380345035641975E8|
+    |    min|0.2755660086887405|0.2797132640922703|0.2744139183934344|0.2760267555713653|                  0|
     |    max|            7002.0|  7002.27978515625|   6963.4599609375|  6978.60009765625|         9976520000|
     +-------+------------------+------------------+------------------+------------------+-------------------+
     
@@ -320,26 +327,26 @@ df_processed.show(10)
     Step 2: Loại bỏ null values...
       - Loại bỏ 0 dòng null
     Step 3: Loại bỏ dòng lỗi (giá <= 0)...
-      - Loại bỏ 4,561 dòng lỗi
+      - Loại bỏ 4,567 dòng lỗi
     Step 4: Loại bỏ bản ghi trùng...
     Step 5: Sort theo ticker và date...
     
-    ✓ Dữ liệu sau xử lý: 192,255 rows
+    ✓ Dữ liệu sau xử lý: 192,381 rows
     
     10 dòng đầu sau xử lý:
     +-------------------+------------------+------------------+------------------+------------------+---------+------+
     |               time|              open|              high|               low|             close|   volume|ticker|
     +-------------------+------------------+------------------+------------------+------------------+---------+------+
-    |2013-01-02 00:00:00|16.726062542519166|16.761700040600363|16.357910009727583|16.581398010253906|560518000|  AAPL|
-    |2013-01-03 00:00:00| 16.54666598301802|16.600726265962198|16.338881397575303|16.372102737426758|352965200|  AAPL|
-    |2013-01-04 00:00:00|16.217179615848526|16.267314076991514|15.880736945619178|15.916072845458984|594333600|  AAPL|
-    |2013-01-07 00:00:00|15.765069599331184|15.985538370818867|15.559701008828565|15.822452545166016|484156400|  AAPL|
-    |2013-01-08 00:00:00|15.982814573333348|16.063754222621842|15.742413395470727|15.865029335021973|458707200|  AAPL|
-    |2013-01-09 00:00:00|15.780160698221348|15.855966401880957|15.583550390363834|15.617074966430664|407604400|  AAPL|
-    |2013-01-10 00:00:00|15.962888741850808|15.968022674558567|15.569366267464405|15.810675621032715|601146000|  AAPL|
-    |2013-01-11 00:00:00|15.734867571100388|15.865336862975507| 15.67506847360663|15.713726997375488|350506800|  AAPL|
-    |2013-01-14 00:00:00|15.181571101548268|15.327142112488126|15.055632572023544|15.153485298156738|734207600|  AAPL|
-    |2013-01-15 00:00:00|15.049293101024734|15.070132051290738|14.598689511646727| 14.67540168762207|876772400|  AAPL|
+    |2013-01-02 00:00:00|16.726068314487094| 16.76170582486638|16.357915654650395|16.581403732299805|560518000|  AAPL|
+    |2013-01-03 00:00:00|16.546671766073732|16.600732067911963| 16.33888710801035|16.372108459472656|352965200|  AAPL|
+    |2013-01-04 00:00:00|16.217170870401674| 16.26730530450863|15.880728381605945|15.916064262390137|594333600|  AAPL|
+    |2013-01-07 00:00:00|15.765061047390368|15.985529699282264|15.559692568292268|15.822443962097168|484156400|  AAPL|
+    |2013-01-08 00:00:00|15.982810730314986| 16.06375036014179|15.742409610256086|15.865025520324709|458707200|  AAPL|
+    |2013-01-09 00:00:00|15.780157807321356|15.855963497093482|15.583547535482532|15.617072105407717|407604400|  AAPL|
+    |2013-01-10 00:00:00|15.962882964717418|15.968016895567152| 15.56936063275084|15.810669898986816|601146000|  AAPL|
+    |2013-01-11 00:00:00|15.734865661185692|15.865334937224311|15.675066570950412|15.713725090026855|350506800|  AAPL|
+    |2013-01-14 00:00:00|15.181567279780758|15.327138254074962|15.055628781959458|15.153481483459473|734207600|  AAPL|
+    |2013-01-15 00:00:00|15.049294078996216|15.070133030616429| 14.59869046033594|14.675402641296388|876772400|  AAPL|
     +-------------------+------------------+------------------+------------------+------------------+---------+------+
     only showing top 10 rows
     
@@ -388,7 +395,7 @@ print("✓ Biểu đồ vẽ xong!")
 ```
 
     Chuyển dữ liệu Spark sang Pandas...
-    ✓ Chuyển xong: 192,255 rows
+    ✓ Chuyển xong: 192,381 rows
     Chọn 5 cổ phiếu đại diện: ['AAPL', 'ACB', 'AMD', 'AMZN', 'BA']
     
 
@@ -856,30 +863,30 @@ df_features.select('time', 'ticker', 'close', 'future_return', 'future_return_3d
 
     Bắt đầu Feature Engineering sử dụng Window Functions...
       VIX features joined OK
-      TNX join skipped: [PATH_NOT_FOUND] Path does not exist: file:/D:/CODE/DoAnTotNgiep/csv/TNX.csv. SQLSTATE: 42K03
-      IRX join skipped: [PATH_NOT_FOUND] Path does not exist: file:/D:/CODE/DoAnTotNgiep/csv/IRX.csv. SQLSTATE: 42K03
+      TNX features joined OK
+      IRX features joined OK
     ✓ Feature Engineering xong!
       3-day label, sector_idx, VN-Index, S&P500, VIX, TNX/IRX (Fed) features da duoc them
     
-    Du lieu sau feature engineering: 192,255 rows
+    Du lieu sau feature engineering: 192,381 rows
     +-------------------+------+------------------+--------------------+--------------------+----------+--------------------+--------------------+
     |               time|ticker|             close|       future_return|    future_return_3d|sector_idx|           vni_ret1d|         sp500_ret1d|
     +-------------------+------+------------------+--------------------+--------------------+----------+--------------------+--------------------+
-    |2013-01-02 00:00:00|  AAPL|16.581398010253906|-0.01262229353023...|-0.04577089728010...|       6.0|                 0.0|                 0.0|
-    |2013-01-03 00:00:00|  AAPL|16.372102737426758|-0.02785408198821...|-0.03097179455425...|       6.0|                 0.0|-0.00208561749461...|
-    |2013-01-04 00:00:00|  AAPL|15.916072845458984|-0.00588212313439...|-0.01878590792662949|       6.0|0.023809523809523832|0.004865096315322949|
-    |2013-01-07 00:00:00|  AAPL|15.822452545166016|0.002690909625699263|-7.44317235250536...|       6.0|                 0.0|-0.00312311615388...|
-    |2013-01-08 00:00:00|  AAPL|15.865029335021973|-0.01562898897665...|-0.00953684575372...|       6.0|0.046511627906976785|-0.00324237130487...|
+    |2013-01-02 00:00:00|  AAPL|16.581403732299805|-0.01262228917443...|-0.04577174420548113|       6.0|                 0.0|                 0.0|
+    |2013-01-03 00:00:00|  AAPL|16.372108459472656| -0.0278549460023067|-0.03097236622901535|       6.0|                 0.0|-0.00208561749461...|
+    |2013-01-04 00:00:00|  AAPL|15.916064262390137|-0.00588212630645...|-0.01878555854344...|       6.0|0.023809523809523832|0.004865096315322949|
+    |2013-01-07 00:00:00|  AAPL|15.822443962097168|0.002691212452990...|-7.44136818468528...|       6.0|                 0.0|-0.00312311615388...|
+    |2013-01-08 00:00:00|  AAPL|15.865025520324709|-0.01562893262285262|-0.00953672782335...|       6.0|0.046511627906976785|-0.00324237130487...|
     +-------------------+------+------------------+--------------------+--------------------+----------+--------------------+--------------------+
     only showing top 5 rows
     +-------------------+------+------------------+--------------------+--------------------+------------------+------------------+--------------------+
     |               time|ticker|             close|       future_return|    future_return_3d|proximity_52w_high|   volume_spike_3d|         rs_vs_sp500|
     +-------------------+------+------------------+--------------------+--------------------+------------------+------------------+--------------------+
-    |2013-01-02 00:00:00|  AAPL|16.581398010253906|-0.01262229353023...|-0.04577089728010...|               1.0|               1.0|                NULL|
-    |2013-01-03 00:00:00|  AAPL|16.372102737426758|-0.02785408198821...|-0.03097179455425...|0.9873777064697609|               1.0|-0.01053667603562...|
-    |2013-01-04 00:00:00|  AAPL|15.916072845458984|-0.00588212313439...|-0.01878590792662949|0.9598752068804158|               1.0|-0.03271917830353...|
-    |2013-01-07 00:00:00|  AAPL|15.822452545166016|0.002690909625699263|-7.44317235250536...|0.9542291027198937|0.9581489014678176|-0.00275900698051...|
-    |2013-01-08 00:00:00|  AAPL|15.865029335021973|-0.01562898897665...|-0.00953684575372...| 0.956796846997525|1.0454220523138527|0.005933280930571...|
+    |2013-01-02 00:00:00|  AAPL|16.581403732299805|-0.01262228917443...|-0.04577174420548113|               1.0|               1.0|                NULL|
+    |2013-01-03 00:00:00|  AAPL|16.372108459472656| -0.0278549460023067|-0.03097236622901535|0.9873777108255647|               1.0|-0.01053667167982231|
+    |2013-01-04 00:00:00|  AAPL|15.916064262390137|-0.00588212630645...|-0.01878555854344...|0.9598743580066375|               1.0|-0.03272004231762965|
+    |2013-01-07 00:00:00|  AAPL|15.822443962097168|0.002691212452990...|-7.44136818468528...|0.9542282557945189|0.9581489014678176|-0.00275901015256...|
+    |2013-01-08 00:00:00|  AAPL|15.865025520324709|-0.01562893262285262|-0.00953672782335...|0.9567962867595086|1.0454220523138527|0.005933583757862537|
     +-------------------+------+------------------+--------------------+--------------------+------------------+------------------+--------------------+
     only showing top 5 rows
     
@@ -949,13 +956,13 @@ print(f"\n✓ df_features sẵn sàng: {df_features.count():,d} rows — label s
 ```
 
     Dropping null values (features only)...
-    ✓ Loại bỏ 12,797 rows null (6.7%)
-      Dữ liệu sau drop null: 179,458 rows
+    ✓ Loại bỏ 12,829 rows null (6.7%)
+      Dữ liệu sau drop null: 179,552 rows
     
     Winsorizing extreme feature values...
     ✓ Winsorized 24 features
     
-    ✓ df_features sẵn sàng: 179,458 rows — label sẽ tạo riêng cho US/VN ở PHẦN 7
+    ✓ df_features sẵn sàng: 179,552 rows — label sẽ tạo riêng cho US/VN ở PHẦN 7
     
 
 ## PHẦN 6B: PHÂN TÍCH TƯƠNG QUAN FEATURES (EDA mở rộng)
@@ -1011,7 +1018,7 @@ if not found:
 
     Cac cap features tuong quan cao (|r| > 0.8) - co the gay da cong tuyen:
       rsi_14                 <-> bb_pct_b              : +0.842
-      rsi_14                 <-> price_vs_ma20         : +0.830
+      rsi_14                 <-> price_vs_ma20         : +0.831
       rsi_7                  <-> stoch_k               : +0.839
       rsi_7                  <-> williams_r            : +0.839
       rsi_7                  <-> cci14                 : +0.860
@@ -1025,7 +1032,7 @@ if not found:
       atr_ratio              <-> rolling_volatility_20 : +0.852
       bb_pct_b               <-> price_vs_ma20         : +0.844
       momentum_5             <-> price_vs_ma5          : +0.809
-      momentum_10            <-> price_vs_ma20         : +0.911
+      momentum_10            <-> price_vs_ma20         : +0.912
     
 
 ## PHẦN 7: TÁCH THỊ TRƯỜNG US vs VN + TẠO LABEL
@@ -1076,16 +1083,7 @@ def create_labels(df, threshold):
         .withColumn('year', year('time'))
     )
 
-# VN: 3-day forward label (giam noise thi truong VN)
-def create_labels_3d(df, threshold):
-    return (
-        df.withColumn('label',
-            when(col('future_return_3d') >  threshold, 1.0)
-           .when(col('future_return_3d') < -threshold, 0.0)
-           .otherwise(None))
-        .dropna(subset=['label', 'next_close_3d'])
-        .withColumn('year', year('time'))
-    )
+
 
 df_us = create_labels(df_features.filter(col('ticker').isin(US_TICKERS)), threshold=0.010)
 # VN tang nguong len 2.0% de loc nhieu (thi truong VN bien dong manh hon)
@@ -1130,12 +1128,12 @@ print(f'  df_vn_all: {df_vn_all.count():,d} rows (incl. neutral=2.0)')
     ============================================================
     THONG KE 3 NHOM
     ============================================================
-      US        : 40,990 rows | L0=19,023(46%) L1=21,967(54%)
+      US        : 40,994 rows | L0=19,026(46%) L1=21,968(54%)
                  Tickers: AAPL, AMD, AMZN, BA, BAC, COST, CVX, DIS, F, GM, GOOGL, GS, INTC, JPM, LLY, MA, META, MSFT, NFLX, NVDA, TSLA, UNH, V, VZ, WFC, WMT, XOM
-      VN        : 20,969 rows | L0=9,483(45%) L1=11,486(55%)
+      VN        : 21,017 rows | L0=9,506(45%) L1=11,511(55%)
                  Tickers: ACB, BCM, BID, BVH, CTG, DHG, FPT, GAS, GMD, HDB, HPG, HSG, KDH, MBB, MSN, MWG, NKG, NLG, PLX, PNJ, POW, REE, SAB, SSI, STB, TCB, VCB, VHM, VIC, VJC, VNM, VPB, VRE
-      df_us_all: 89,120 rows (incl. neutral=2.0)
-      df_vn_all: 90,338 rows (incl. neutral=2.0)
+      df_us_all: 89,147 rows (incl. neutral=2.0)
+      df_vn_all: 90,405 rows (incl. neutral=2.0)
     
 
 ## PHẦN 8: ĐỊNH NGHĨA PIPELINE FUNCTIONS
@@ -1708,18 +1706,18 @@ res_us_xgb = run_xgb_pipeline(df_us,  'US', FEATURE_COLS_US)
     ======================================================================
     SPARK ML — US STOCKS (55 features)
     ======================================================================
-      Train: 26,509 | Test: 14,481
-      Grid search | sub_train=18,987 | val=7,522
-        RF depth=4 trees=100: val_AUC=0.5275
-        RF depth=4 trees=200: val_AUC=0.5299
-        RF depth=6 trees=100: val_AUC=0.5262
-        RF depth=6 trees=200: val_AUC=0.5231
-        GBT depth=3 step=0.03: val_AUC=0.5351
-        GBT depth=3 step=0.1: val_AUC=0.5347
-        GBT depth=5 step=0.03: val_AUC=0.5336
-        GBT depth=5 step=0.1: val_AUC=0.5434
-      Best RF : {'maxDepth': 4, 'numTrees': 200} (val_AUC=0.5299)
-      Best GBT: {'maxDepth': 5, 'stepSize': 0.1} (val_AUC=0.5434)
+      Train: 26,488 | Test: 14,506
+      Grid search | sub_train=18,966 | val=7,522
+        RF depth=4 trees=100: val_AUC=0.5042
+        RF depth=4 trees=200: val_AUC=0.5006
+        RF depth=6 trees=100: val_AUC=0.5050
+        RF depth=6 trees=200: val_AUC=0.5053
+        GBT depth=3 step=0.03: val_AUC=0.5157
+        GBT depth=3 step=0.1: val_AUC=0.5022
+        GBT depth=5 step=0.03: val_AUC=0.5176
+        GBT depth=5 step=0.1: val_AUC=0.5201
+      Best RF : {'maxDepth': 6, 'numTrees': 200} (val_AUC=0.5053)
+      Best GBT: {'maxDepth': 5, 'stepSize': 0.1} (val_AUC=0.5201)
       Training models:
         LR... ok
         RF... ok
@@ -1728,34 +1726,34 @@ res_us_xgb = run_xgb_pipeline(df_us,  'US', FEATURE_COLS_US)
     
       Model        Accuracy    AUC-ROC
       --------------------------------
-      LR             0.5066     0.5088
-      RF             0.5056     0.5133
-      GBT            0.5263     0.5302
-      SVC            0.5269     0.5003
-      Ensemble       0.5263
+      LR             0.4890     0.5035
+      RF             0.4827     0.4944
+      GBT            0.4876     0.4947
+      SVC            0.5267     0.4954
+      Ensemble       0.4901
     
-      Top 5 features (US): sp500_ret1d, sp500_mom5, sp500_ma_ratio, vix_level, vix_ma_ratio
+      Top 5 features (US): irx_spread, sp500_ret1d, sp500_mom5, tnx_chg1d, sp500_ma_ratio
     
     ok US Spark pipeline xong!
     
     ======================================================================
     XGBOOST — US STOCKS (55 features)
     ======================================================================
-      40,990 rows | 27 tickers
-      Train: 26,509 | Test: 14,481
-      XGB grid search | sub_train=18,987 | val=7,522
-        XGB depth=3 lr=0.03: val_AUC=0.5157
-        XGB depth=3 lr=0.1: val_AUC=0.5268
-        XGB depth=5 lr=0.03: val_AUC=0.5085
-        XGB depth=5 lr=0.1: val_AUC=0.5229
-      Best XGB: {'max_depth': 3, 'learning_rate': 0.1} (val_AUC=0.5268)
-      XGBoost: Accuracy=0.5169  AUC-ROC=0.5246
-      Top 5: sp500_ret1d, vix_ma_ratio, vix_ret1d, vix_level, sp500_ma_ratio
+      40,994 rows | 27 tickers
+      Train: 26,488 | Test: 14,506
+      XGB grid search | sub_train=18,966 | val=7,522
+        XGB depth=3 lr=0.03: val_AUC=0.5211
+        XGB depth=3 lr=0.1: val_AUC=0.5154
+        XGB depth=5 lr=0.03: val_AUC=0.5139
+        XGB depth=5 lr=0.1: val_AUC=0.5144
+      Best XGB: {'max_depth': 3, 'learning_rate': 0.03} (val_AUC=0.5211)
+      XGBoost: Accuracy=0.4806  AUC-ROC=0.4867
+      Top 5: irx_rate, sp500_ret1d, irx_spread, vix_ma_ratio, vix_level
     
     ok US XGBoost xong!
     
 
-    C:\Users\phamv\AppData\Local\Temp\ipykernel_9888\210527363.py:93: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    C:\Users\phamv\AppData\Local\Temp\ipykernel_35776\210527363.py:93: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
       ticker_acc = df_ts_c.groupby('ticker').apply(
     
 
@@ -1770,26 +1768,26 @@ res_us_dl = run_dl_pipeline(df_us, 'US', FEATURE_COLS_US, df_full_spark=df_us_al
     ======================================================================
     DEEP LEARNING (LSTM+GRU) -- US (55 features)
     ======================================================================
-      Full context: 89,120 rows vs 40,990 labeled
-      Train: 26,322 seqs | Test: 14,160 seqs | Shape: (26322, 20, 55)
-      Class: 0=12,057 | 1=14,265 | weight={0: 1.0915650659368001, 1: 0.9226077812828601}
+      Full context: 89,147 rows vs 40,994 labeled
+      Train: 26,301 seqs | Test: 14,185 seqs | Shape: (26301, 20, 55)
+      Class: 0=12,043 | 1=14,258 | weight={0: 1.0919621356804783, 1: 0.9223243091597699}
     
       Training LSTM...
     
 
-    C:\Users\phamv\AppData\Local\Temp\ipykernel_9888\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    C:\Users\phamv\AppData\Local\Temp\ipykernel_35776\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
       ticker_acc = ta_df.groupby('ticker').apply(
     
 
-      LSTM: Acc=0.5098  AUC=0.5144  (epochs=40)
+      LSTM: Acc=0.4803  AUC=0.4860  (epochs=40)
     
       Training GRU...
-      GRU: Acc=0.5084  AUC=0.5155  (epochs=40)
+      GRU: Acc=0.4841  AUC=0.4915  (epochs=40)
     
     ok US Deep Learning pipeline xong!
     
 
-    C:\Users\phamv\AppData\Local\Temp\ipykernel_9888\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    C:\Users\phamv\AppData\Local\Temp\ipykernel_35776\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
       ticker_acc = ta_df.groupby('ticker').apply(
     
 
@@ -1805,18 +1803,18 @@ res_vn_xgb = run_xgb_pipeline(df_vn,  'VN', FEATURE_COLS_VN)
     ======================================================================
     SPARK ML — VN STOCKS (50 features)
     ======================================================================
-      Train: 13,201 | Test: 7,768
-      Grid search | sub_train=8,819 | val=4,382
-        RF depth=4 trees=100: val_AUC=0.6101
-        RF depth=4 trees=200: val_AUC=0.6139
-        RF depth=6 trees=100: val_AUC=0.6137
-        RF depth=6 trees=200: val_AUC=0.6201
-        GBT depth=3 step=0.03: val_AUC=0.6007
-        GBT depth=3 step=0.1: val_AUC=0.6056
-        GBT depth=5 step=0.03: val_AUC=0.5908
-        GBT depth=5 step=0.1: val_AUC=0.5900
-      Best RF : {'maxDepth': 6, 'numTrees': 200} (val_AUC=0.6201)
-      Best GBT: {'maxDepth': 3, 'stepSize': 0.1} (val_AUC=0.6056)
+      Train: 13,252 | Test: 7,765
+      Grid search | sub_train=8,867 | val=4,385
+        RF depth=4 trees=100: val_AUC=0.6086
+        RF depth=4 trees=200: val_AUC=0.6155
+        RF depth=6 trees=100: val_AUC=0.6196
+        RF depth=6 trees=200: val_AUC=0.6230
+        GBT depth=3 step=0.03: val_AUC=0.6073
+        GBT depth=3 step=0.1: val_AUC=0.5990
+        GBT depth=5 step=0.03: val_AUC=0.6073
+        GBT depth=5 step=0.1: val_AUC=0.5874
+      Best RF : {'maxDepth': 6, 'numTrees': 200} (val_AUC=0.6230)
+      Best GBT: {'maxDepth': 3, 'stepSize': 0.03} (val_AUC=0.6073)
       Training models:
         LR... ok
         RF... ok
@@ -1825,34 +1823,34 @@ res_vn_xgb = run_xgb_pipeline(df_vn,  'VN', FEATURE_COLS_VN)
     
       Model        Accuracy    AUC-ROC
       --------------------------------
-      LR             0.5336     0.5458
-      RF             0.5502     0.5845
-      GBT            0.5523     0.5725
-      SVC            0.5256     0.5427
-      Ensemble       0.5475
+      LR             0.5381     0.5473
+      RF             0.5526     0.5856
+      GBT            0.5496     0.5713
+      SVC            0.5263     0.5444
+      Ensemble       0.5498
     
-      Top 5 features (VN): vni_mom5, daily_return, price_vs_ma5, vni_ret1d, close_open_return
+      Top 5 features (VN): vni_mom5, daily_return, vni_ret1d, price_vs_ma5, close_open_return
     
     ok VN Spark pipeline xong!
     
     ======================================================================
     XGBOOST — VN STOCKS (50 features)
     ======================================================================
-      20,969 rows | 33 tickers
-      Train: 13,201 | Test: 7,768
-      XGB grid search | sub_train=8,819 | val=4,382
-        XGB depth=3 lr=0.03: val_AUC=0.6002
-        XGB depth=3 lr=0.1: val_AUC=0.5938
-        XGB depth=5 lr=0.03: val_AUC=0.6028
-        XGB depth=5 lr=0.1: val_AUC=0.5882
-      Best XGB: {'max_depth': 5, 'learning_rate': 0.03} (val_AUC=0.6028)
-      XGBoost: Accuracy=0.5587  AUC-ROC=0.5814
-      Top 5: daily_return, vni_mom5, vni_ret1d, vni_ma_ratio, price_vs_ma5
+      21,017 rows | 33 tickers
+      Train: 13,252 | Test: 7,765
+      XGB grid search | sub_train=8,867 | val=4,385
+        XGB depth=3 lr=0.03: val_AUC=0.6055
+        XGB depth=3 lr=0.1: val_AUC=0.5992
+        XGB depth=5 lr=0.03: val_AUC=0.5986
+        XGB depth=5 lr=0.1: val_AUC=0.5917
+      Best XGB: {'max_depth': 3, 'learning_rate': 0.03} (val_AUC=0.6055)
+      XGBoost: Accuracy=0.5570  AUC-ROC=0.5801
+      Top 5: bb_bandwidth, daily_return, vni_mom5, cci14, vni_ret1d
     
     ok VN XGBoost xong!
     
 
-    C:\Users\phamv\AppData\Local\Temp\ipykernel_9888\210527363.py:93: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    C:\Users\phamv\AppData\Local\Temp\ipykernel_35776\210527363.py:93: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
       ticker_acc = df_ts_c.groupby('ticker').apply(
     
 
@@ -1867,26 +1865,26 @@ res_vn_dl = run_dl_pipeline(df_vn, 'VN', FEATURE_COLS_VN, df_full_spark=df_vn_al
     ======================================================================
     DEEP LEARNING (LSTM+GRU) -- VN (50 features)
     ======================================================================
-      Full context: 90,338 rows vs 20,969 labeled
-      Train: 13,025 seqs | Test: 7,531 seqs | Shape: (13025, 20, 50)
-      Class: 0=5,738 | 1=7,287 | weight={0: 1.1349773440223074, 1: 0.8937148346370248}
+      Full context: 90,405 rows vs 21,017 labeled
+      Train: 13,054 seqs | Test: 7,529 seqs | Shape: (13054, 20, 50)
+      Class: 0=5,751 | 1=7,303 | weight={0: 1.1349330551208485, 1: 0.8937422976858825}
     
       Training LSTM...
     
 
-    C:\Users\phamv\AppData\Local\Temp\ipykernel_9888\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    C:\Users\phamv\AppData\Local\Temp\ipykernel_35776\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
       ticker_acc = ta_df.groupby('ticker').apply(
     
 
-      LSTM: Acc=0.5367  AUC=0.5536  (epochs=40)
+      LSTM: Acc=0.5484  AUC=0.5595  (epochs=40)
     
       Training GRU...
-      GRU: Acc=0.5639  AUC=0.5886  (epochs=40)
+      GRU: Acc=0.5638  AUC=0.5893  (epochs=40)
     
     ok VN Deep Learning pipeline xong!
     
 
-    C:\Users\phamv\AppData\Local\Temp\ipykernel_9888\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
+    C:\Users\phamv\AppData\Local\Temp\ipykernel_35776\4180580610.py:146: FutureWarning: DataFrameGroupBy.apply operated on the grouping columns. This behavior is deprecated, and in a future version of pandas the grouping columns will be excluded from the operation. Either pass `include_groups=False` to exclude the groupings or explicitly select the grouping columns after groupby to silence this warning.
       ticker_acc = ta_df.groupby('ticker').apply(
     
 
@@ -2025,25 +2023,25 @@ print('ok Chon mo hinh tot nhat xong (Composite Score)!')
     MO HINH TOT NHAT — US vs VN  (Composite = 0.3*Acc + 0.4*AUC + 0.3*F1_macro)
     ================================================================================
     
-      US: Best = GBT          Acc=0.5263  AUC=0.5302  F1=0.5175  Composite=0.5252
-        1. GBT          Acc=0.5263  AUC=0.5302  F1=0.5175  Comp=0.5252  <- BEST
-        2. Ensemble     Acc=0.5263  AUC=nan  F1=0.0000  Comp=nan
-        3. XGBoost      Acc=0.5169  AUC=0.5246  F1=0.5155  Comp=0.5195
-        4. GRU          Acc=0.5084  AUC=0.5155  F1=0.5082  Comp=0.5112
-        5. LSTM         Acc=0.5098  AUC=0.5144  F1=0.5081  Comp=0.5111
-        6. RF           Acc=0.5056  AUC=0.5133  F1=0.5041  Comp=0.5083
-        7. LR           Acc=0.5066  AUC=0.5088  F1=0.5058  Comp=0.5073
-        8. SVC          Acc=0.5269  AUC=0.5003  F1=0.3517  Comp=0.4637
+      US: Best = LR           Acc=0.4890  AUC=0.5035  F1=0.4708  Composite=0.4894
+        1. LR           Acc=0.4890  AUC=0.5035  F1=0.4708  Comp=0.4894  <- BEST
+        2. GBT          Acc=0.4876  AUC=0.4947  F1=0.4827  Comp=0.4890
+        3. RF           Acc=0.4827  AUC=0.4944  F1=0.4635  Comp=0.4816
+        4. Ensemble     Acc=0.4901  AUC=nan  F1=0.0000  Comp=nan
+        5. GRU          Acc=0.4841  AUC=0.4915  F1=0.4618  Comp=0.4804
+        6. LSTM         Acc=0.4803  AUC=0.4860  F1=0.4459  Comp=0.4722
+        7. XGBoost      Acc=0.4806  AUC=0.4867  F1=0.4180  Comp=0.4643
+        8. SVC          Acc=0.5267  AUC=0.4954  F1=0.3597  Comp=0.4641
     
-      VN: Best = GRU          Acc=0.5639  AUC=0.5886  F1=0.5639  Composite=0.5738
-        1. Ensemble     Acc=0.5475  AUC=nan  F1=0.0000  Comp=nan
-        2. GRU          Acc=0.5639  AUC=0.5886  F1=0.5639  Comp=0.5738  <- BEST
-        3. XGBoost      Acc=0.5587  AUC=0.5814  F1=0.5552  Comp=0.5667
-        4. RF           Acc=0.5502  AUC=0.5845  F1=0.5501  Comp=0.5639
-        5. GBT          Acc=0.5523  AUC=0.5725  F1=0.5443  Comp=0.5580
-        6. LSTM         Acc=0.5367  AUC=0.5536  F1=0.5364  Comp=0.5434
-        7. LR           Acc=0.5336  AUC=0.5458  F1=0.5310  Comp=0.5377
-        8. SVC          Acc=0.5256  AUC=0.5427  F1=0.3589  Comp=0.4824
+      VN: Best = GRU          Acc=0.5638  AUC=0.5893  F1=0.5633  Composite=0.5739
+        1. RF           Acc=0.5526  AUC=0.5856  F1=0.5526  Comp=0.5658
+        2. Ensemble     Acc=0.5498  AUC=nan  F1=0.0000  Comp=nan
+        3. GRU          Acc=0.5638  AUC=0.5893  F1=0.5633  Comp=0.5739  <- BEST
+        4. XGBoost      Acc=0.5570  AUC=0.5801  F1=0.5554  Comp=0.5657
+        5. GBT          Acc=0.5496  AUC=0.5713  F1=0.5308  Comp=0.5527
+        6. LSTM         Acc=0.5484  AUC=0.5595  F1=0.5477  Comp=0.5526
+        7. LR           Acc=0.5381  AUC=0.5473  F1=0.5354  Comp=0.5410
+        8. SVC          Acc=0.5263  AUC=0.5444  F1=0.3642  Comp=0.4849
     
 
 
@@ -2468,45 +2466,29 @@ with open(_art / 'walkforward.json', 'w', encoding='utf-8') as _f:
 print(f"  Exported walk-forward (US={best_us_name}, VN={best_vn_name}) "
       f"-> demo/artifacts/walkforward.json")
 
-# ── Export model GRU (VN) de app dung GRU cho tab Du bao (lazy-load TF) ──────
-try:
-    import joblib as _joblib
-    _gru = res_vn_dl['metrics'].get('GRU') if best_vn_name == 'GRU' else None
-    if _gru and 'model' in _gru:
-        _gru['model'].save(str(_art / 'gru_VN.keras'))
-        _joblib.dump(res_vn_dl['scaler'], _art / 'gru_VN_scaler.pkl')
-        _ta = _gru.get('ticker_acc')
-        _ta_dict = {str(k): float(v) for k, v in dict(_ta).items()} if _ta is not None else {}
-        with open(_art / 'gru_VN_meta.json', 'w', encoding='utf-8') as _f:
-            _json.dump({'market': 'VN',
-                        'features': list(res_vn_dl['features']),
-                        'seq_len': int(res_vn_dl['seq_len']),
-                        'accuracy': float(_gru['accuracy']),
-                        'auc': float(_gru['auc']),
-                        'ticker_acc': _ta_dict}, _f, ensure_ascii=False, indent=2)
-        print("  Exported GRU model (VN) -> demo/artifacts/gru_VN.keras (+scaler, meta)")
-    else:
-        print(f"  [GRU export] VN best={best_vn_name} != GRU hoac chua co model -> bo qua")
-except Exception as _e:
-    print(f"  [GRU export] Loi: {_e}")
+# ── (Da chuyen) Export model GRU (VN) -> demo/train_gru.py ─────────────────
+# Model GRU gio duoc train & xuat bang script demo rieng (khong train trong notebook):
+#     python demo/train_gru.py --market VN
+# -> sinh demo/artifacts/gru_VN.keras (+ scaler, meta), dinh dang khong doi nen
+#    app (tab Du bao) va demo/train_multi_models.py (candidate GRU) van doc binh thuong.
 
 ```
 
     
     =================================================================
-    WALK-FORWARD VALIDATION — US | Model: GBT (55 features)
+    WALK-FORWARD VALIDATION — US | Model: LR (55 features)
     =================================================================
       Fold            Train window  Test year   Accuracy      AUC   N_test
     -----------------------------------------------------------------
-      2019    2013–2018    2019       0.5275   0.4645     2781
-      2020    2013–2019    2020       0.5159   0.5132     4154
-      2021    2013–2020    2021       0.5125   0.5097     3368
-      2022    2013–2021    2022       0.4908   0.5010     4199
-      2023    2013–2022    2023       0.5208   0.5169     3218
-      2024    2013–2023    2024       0.5378   0.5162     3072
+      2019    2013–2018    2019       0.5433   0.5062     2781
+      2020    2013–2019    2020       0.5248   0.5658     4154
+      2021    2013–2020    2021       0.5472   0.5265     3368
+      2022    2013–2021    2022       0.4901   0.5048     4199
+      2023    2013–2022    2023       0.4922   0.5066     3218
+      2024    2013–2023    2024       0.5264   0.5318     3072
     -----------------------------------------------------------------
-      MEAN                                     0.5175   0.5036
-       STD                                     0.0145   0.0182
+      MEAN                                     0.5207   0.5236
+       STD                                     0.0224   0.0216
       [VN] GRU: walk-forward THUC SU -- retrain moi fold (~30 phut/fold)
     
     =================================================================
@@ -2514,17 +2496,16 @@ except Exception as _e:
     =================================================================
       Fold            Train window  Test year   Accuracy      AUC   N_test
     -----------------------------------------------------------------
-      2019    2013-2018    2019       0.5687   0.6027     1099
-      2020    2013-2019    2020       0.5585   0.5919     2170
-      2021    2013-2020    2021       0.5542   0.5541     2212
-      2022    2013-2021    2022       0.5639   0.5873     2731
-      2023    2013-2022    2023       0.5850   0.6155     1636
-      2024    2013-2023    2024       0.5337   0.5512     1128
+      2019    2013-2018    2019       0.5704   0.6042     1101
+      2020    2013-2019    2020       0.5672   0.6011     2172
+      2021    2013-2020    2021       0.5337   0.5569     2213
+      2022    2013-2021    2022       0.5559   0.5908     2729
+      2023    2013-2022    2023       0.5654   0.5979     1636
+      2024    2013-2023    2024       0.5368   0.5480     1129
     -----------------------------------------------------------------
-      MEAN                                     0.5607   0.5838
-       STD                                     0.0155   0.0237
-      Exported walk-forward (US=GBT, VN=GRU) -> demo/artifacts/walkforward.json
-      Exported GRU model (VN) -> demo/artifacts/gru_VN.keras (+scaler, meta)
+      MEAN                                     0.5549   0.5831
+       STD                                     0.0146   0.0222
+      Exported walk-forward (US=LR, VN=GRU) -> demo/artifacts/walkforward.json
     
 
 
@@ -2587,70 +2568,70 @@ print('\nNhan xet: Accuracy khac nhau theo tung nam phan anh dung thuc te thi tr
 
 
 ```python
-# ── BACKTEST EQUITY CURVE (tinh truoc bao cao tong hop) ─────────────────────
+# ── BACKTEST EQUITY CURVE — sua loi SELECTION BIAS ─────────────────────────
+# Loi cu: equity chi tinh tren cac phien |return| > nguong (tap da loc de lam label).
+# Vi tap nay duoc CHON bang chinh return tuong lai nen "B&H" bi thoi phong phi thuc te
+# (hang nghin %). Sua: dung df_*_all (GIU CA phien NEUTRAL) de tinh B&H that tren TOAN
+# BO phien giao dich; Strategy chi long khi mo hinh du bao TANG (pred==1), con lai
+# dung ngoai (giu tien mat -> return 0).
 import pandas as pd
 import numpy as np
 
-def _get_bt_preds(res, res_xgb, res_dl, best_name):
-    """Lay DataFrame test co prediction de tinh backtest equity curve.
-    DL (LSTM/GRU): join y_pred vao df_ts_pd qua (ticker, time) vi build_sequences
-    bo cac dong dau moi ticker thieu context -> do dai y_pred < df_ts_pd.
-    """
-    cols = ['time', 'close', 'next_close', 'label', 'prediction']
+def _winner_pred_map(res, res_xgb, res_dl, best_name):
+    """Tra ve dict {(ticker, ngay): pred 0/1} cua mo hinh thang.
+    Tin hieu chi co o cac phien da duoc gan label (|return| > nguong)."""
+    m = {}
+    def _add(tickers, times, preds):
+        for tk, tm, p in zip(list(tickers), pd.to_datetime(list(times)), list(preds)):
+            m[(tk, pd.Timestamp(tm).normalize())] = int(p)
     if best_name == 'XGBoost':
-        df = res_xgb['df_ts'].copy()
-        df['prediction'] = res_xgb['y_pred']
+        df = res_xgb['df_ts']
+        _add(df['ticker'].values, df['time'].values, res_xgb['y_pred'])
     elif best_name in ('LSTM', 'GRU'):
-        dl_met = res_dl['metrics'].get(best_name, {})
-        if 'df_ts_pd' in dl_met and 'tm_ts' in dl_met and 'tk_ts' in dl_met:
-            # Join y_pred vao df_ts_pd theo (ticker, time) — tranh lech do seq warmup
-            pred_map = {
-                (tkr, pd.Timestamp(tm)): int(p)
-                for tkr, tm, p in zip(dl_met['tk_ts'], dl_met['tm_ts'], dl_met['y_pred'])
-            }
-            df = dl_met['df_ts_pd'].copy()
-            df['time'] = pd.to_datetime(df['time'])
-            df['prediction'] = df.apply(
-                lambda r: pred_map.get((r['ticker'], r['time']), -1), axis=1
-            )
-            df = df[df['prediction'] != -1].reset_index(drop=True)  # bo warmup rows
-        else:
-            print(f'  [{best_name}] chua co df_ts_pd/tm_ts -> dung XGBoost data')
-            df = res_xgb['df_ts'].copy()
-            df['prediction'] = res_xgb['y_pred']
-    else:  # Spark model
-        avail = [c for c in cols if c in res['predictions'][best_name].columns]
-        df = res['predictions'][best_name].select(*avail).toPandas()
-    avail = [c for c in cols if c in df.columns]
-    return df[avail]
+        dl = res_dl['metrics'].get(best_name, {})
+        if {'tk_ts', 'tm_ts', 'y_pred'} <= set(dl):
+            _add(dl['tk_ts'], dl['tm_ts'], dl['y_pred'])
+        else:   # fallback: dung du bao XGBoost
+            df = res_xgb['df_ts']
+            _add(df['ticker'].values, df['time'].values, res_xgb['y_pred'])
+    else:       # Spark model (LR/RF/GBT/SVC)
+        pdf = res['predictions'][best_name].select('ticker', 'time', 'prediction').toPandas()
+        _add(pdf['ticker'].values, pdf['time'].values, pdf['prediction'].values)
+    return m
 
-def _compute_equity(preds_df):
-    """Tinh equity curve tu DataFrame co prediction."""
-    df = preds_df.copy()
-    df['time'] = pd.to_datetime(df['time'])
-    df = df.sort_values('time').reset_index(drop=True)
-    df['act']   = (df['next_close'] - df['close']) / df['close']
-    df['strat'] = df.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
-    d = df.groupby('time')[['act', 'strat']].mean().reset_index()
+def _true_equity(df_all_spark, pred_map, start_year=2022):
+    """Equity curve THUC TE tren TOAN BO phien giao dich (khong chi cac phien da loc).
+    B&H  : giu tat ca phien.  Strategy: long khi pred==1, con lai flat (return 0)."""
+    pdf = df_all_spark.select('ticker', 'time', 'close', 'next_close').toPandas()
+    pdf['time'] = pd.to_datetime(pdf['time'])
+    pdf = pdf[pdf['time'].dt.year >= start_year].dropna(subset=['next_close']).copy()
+    pdf['act'] = (pdf['next_close'] - pdf['close']) / pdf['close']
+    keys = list(zip(pdf['ticker'].values, pdf['time'].dt.normalize()))
+    pdf['pred']  = [pred_map.get(k, 0) for k in keys]
+    pdf['strat'] = np.where(pdf['pred'] == 1, pdf['act'], 0.0)
+    d = (pdf.groupby('time')[['act', 'strat']].mean()
+            .reset_index().sort_values('time').reset_index(drop=True))
     d['eq_bnh']   = (1 + d['act']).cumprod()   * 100
     d['eq_strat'] = (1 + d['strat']).cumprod() * 100
     return d
 
-pred_us = _get_bt_preds(res_us, res_us_xgb, res_us_dl, best_us_name)
-pred_vn = _get_bt_preds(res_vn, res_vn_xgb, res_vn_dl, best_vn_name)
-d_us = _compute_equity(pred_us)
-d_vn = _compute_equity(pred_vn)
+map_us = _winner_pred_map(res_us, res_us_xgb, res_us_dl, best_us_name)
+map_vn = _winner_pred_map(res_vn, res_vn_xgb, res_vn_dl, best_vn_name)
+d_us = _true_equity(df_us_all, map_us)
+d_vn = _true_equity(df_vn_all, map_vn)
 
 bt_us = pd.DataFrame({'Strategy%': [d_us['eq_strat'].iloc[-1]], 'B&H%': [d_us['eq_bnh'].iloc[-1]]})
 bt_vn = pd.DataFrame({'Strategy%': [d_vn['eq_strat'].iloc[-1]], 'B&H%': [d_vn['eq_bnh'].iloc[-1]]})
 
-print(f'Backtest US — Strategy: {d_us["eq_strat"].iloc[-1]:.0f}%  |  B&H: {d_us["eq_bnh"].iloc[-1]:.0f}%')
-print(f'Backtest VN — Strategy: {d_vn["eq_strat"].iloc[-1]:.0f}%  |  B&H: {d_vn["eq_bnh"].iloc[-1]:.0f}%')
+print(f'Backtest US — Strategy: {d_us["eq_strat"].iloc[-1]:.1f}%  |  B&H: {d_us["eq_bnh"].iloc[-1]:.1f}%')
+print(f'Backtest VN — Strategy: {d_vn["eq_strat"].iloc[-1]:.1f}%  |  B&H: {d_vn["eq_bnh"].iloc[-1]:.1f}%')
+print('(B&H = giu tat ca phien tren toan danh muc; Strategy = chi long khi mo hinh du bao TANG)')
 
 ```
 
-    Backtest US — Strategy: 375%  |  B&H: 404%
-    Backtest VN — Strategy: 63014%  |  B&H: 154880%
+    Backtest US — Strategy: 122.8%  |  B&H: 185.6%
+    Backtest VN — Strategy: 231.4%  |  B&H: 120.4%
+    (B&H = giu tat ca phien tren toan danh muc; Strategy = chi long khi mo hinh du bao TANG)
     
 
 
@@ -2664,29 +2645,15 @@ print('=' * 70)
 #   2. Groupby ngay -> mean() de tong hop nhieu tickers thanh 1 danh muc
 #   3. Cumprod() de ra tang truong luy ke
 #   -> Tranh loi .sum() tren bt DataFrame (cong don cac tickers = vo nghia)
-def calc_equity(res, res_xgb, res_dl, best_name):
-    try:
-        pred = _equity_preds_pd(res, res_xgb, res_dl, best_name)
-        pred['time'] = pd.to_datetime(pred['time'])
-        pred = pred.sort_values('time').reset_index(drop=True)
-        pred['act']   = (pred['next_close'] - pred['close']) / pred['close']
-        pred['strat'] = pred.apply(
-            lambda r: r['act'] if r['prediction'] == 1 else 0.0, axis=1)
-        d = pred.groupby('time')[['act', 'strat']].mean().reset_index()
-        eq_strat = (1 + d['strat']).cumprod().iloc[-1] * 100
-        eq_bnh   = (1 + d['act']).cumprod().iloc[-1] * 100
-        return eq_strat, eq_bnh
-    except Exception as e:
-        print(f'  [calc_equity error]: {e}')
-        return 0.0, 0.0
-
-strat_us, bnh_us = calc_equity(res_us, res_us_xgb, res_us_dl, best_us_name)
-strat_vn, bnh_vn = calc_equity(res_vn, res_vn_xgb, res_vn_dl, best_vn_name)
+# Backtest da tinh o cell 'BACKTEST EQUITY CURVE' (d_us / d_vn) — TRUE B&H tren
+# TOAN BO phien giao dich, khong con selection bias. Lay truc tiep ket qua cuoi cung.
+strat_us, bnh_us = float(d_us['eq_strat'].iloc[-1]), float(d_us['eq_bnh'].iloc[-1])
+strat_vn, bnh_vn = float(d_vn['eq_strat'].iloc[-1]), float(d_vn['eq_bnh'].iloc[-1])
 
 groups = [
     (res_us, res_us_xgb, res_us_dl, strat_us, bnh_us, best_us_name, best_us_acc),
     (res_vn, res_vn_xgb, res_vn_dl, strat_vn, bnh_vn, best_vn_name, best_vn_acc),
-]
+]   
 for res, res_xgb, res_dl, strat_pct, bnh_pct, winner, win_acc in groups:
     m       = res['market']
     best_k  = max(res['metrics'], key=lambda k: res['metrics'][k]['accuracy'])
@@ -2718,22 +2685,20 @@ print('=' * 70)
     ======================================================================
     BAO CAO TONG HOP — US vs VN STOCK ANALYSIS
     ======================================================================
-      [calc_equity error]: name '_equity_preds_pd' is not defined
-      [calc_equity error]: name '_equity_preds_pd' is not defined
     
-      US STOCKS  (26,509 train | 14,481 test)
-      Best Spark   : SVC         Acc=0.5269  AUC=0.5003
-      XGBoost      :             Acc=0.5169  AUC=0.5246
-      Best DL      : LSTM        Acc=0.5098  AUC=0.5144
-      -> Winner    : GBT         Acc=0.5263
-      Backtest     : Strategy 0.0%  vs  B&H 0.0%  (0.0% edge)
+      US STOCKS  (26,488 train | 14,506 test)
+      Best Spark   : SVC         Acc=0.5267  AUC=0.4954
+      XGBoost      :             Acc=0.4806  AUC=0.4867
+      Best DL      : GRU         Acc=0.4841  AUC=0.4915
+      -> Winner    : LR          Acc=0.4890
+      Backtest     : Strategy 122.8%  vs  B&H 185.6%  (-62.8% edge)
     
-      VN STOCKS  (13,201 train | 7,768 test)
-      Best Spark   : GBT         Acc=0.5523  AUC=0.5725
-      XGBoost      :             Acc=0.5587  AUC=0.5814
-      Best DL      : GRU         Acc=0.5639  AUC=0.5886
-      -> Winner    : GRU         Acc=0.5639
-      Backtest     : Strategy 0.0%  vs  B&H 0.0%  (0.0% edge)
+      VN STOCKS  (13,252 train | 7,765 test)
+      Best Spark   : RF          Acc=0.5526  AUC=0.5856
+      XGBoost      :             Acc=0.5570  AUC=0.5801
+      Best DL      : GRU         Acc=0.5638  AUC=0.5893
+      -> Winner    : GRU         Acc=0.5638
+      Backtest     : Strategy 231.4%  vs  B&H 120.4%  (+110.9% edge)
     
     ======================================================================
     HOAN THANH
@@ -2883,36 +2848,36 @@ print(f'ok Danh gia chi tiet xong! (US: {best_us_name} | VN: {best_vn_name})')
 ```
 
     ================================================================
-    US — GBT Classification Report (test set)
+    US — LR Classification Report (test set)
     ================================================================
                   precision    recall  f1-score   support
     
-            DOWN     0.5019    0.4116    0.4523      6881
-              UP     0.5419    0.6301    0.5827      7600
+            DOWN     0.4750    0.7093    0.5690      6898
+              UP     0.5233    0.2893    0.3726      7608
     
-        accuracy                         0.5263     14481
-       macro avg     0.5219    0.5208    0.5175     14481
-    weighted avg     0.5229    0.5263    0.5207     14481
+        accuracy                         0.4890     14506
+       macro avg     0.4992    0.4993    0.4708     14506
+    weighted avg     0.5004    0.4890    0.4660     14506
     
-      Precision (UP): 0.5419
-      Recall    (UP): 0.6301
-      F1-score  (UP): 0.5827
+      Precision (UP): 0.5233
+      Recall    (UP): 0.2893
+      F1-score  (UP): 0.3726
     
     ================================================================
     VN — GRU Classification Report (test set)
     ================================================================
                   precision    recall  f1-score   support
     
-            DOWN     0.5340    0.6090    0.5690      3560
-              UP     0.5990    0.5235    0.5587      3971
+            DOWN     0.5324    0.6335    0.5785      3558
+              UP     0.6042    0.5014    0.5480      3971
     
-        accuracy                         0.5639      7531
-       macro avg     0.5665    0.5663    0.5639      7531
-    weighted avg     0.5682    0.5639    0.5636      7531
+        accuracy                         0.5638      7529
+       macro avg     0.5683    0.5674    0.5633      7529
+    weighted avg     0.5703    0.5638    0.5625      7529
     
-      Precision (UP): 0.5990
-      Recall    (UP): 0.5235
-      F1-score  (UP): 0.5587
+      Precision (UP): 0.6042
+      Recall    (UP): 0.5014
+      F1-score  (UP): 0.5480
     
     
 
@@ -2922,7 +2887,7 @@ print(f'ok Danh gia chi tiet xong! (US: {best_us_name} | VN: {best_vn_name})')
     
 
 
-    ok Danh gia chi tiet xong! (US: GBT | VN: GRU)
+    ok Danh gia chi tiet xong! (US: LR | VN: GRU)
     
 
 
@@ -3083,14 +3048,9 @@ plt.tight_layout(); save_fig(fig, 'Hinh_4_5', '4.5')
 
 # ── Hinh 4.6: Backtest Equity Curve — US (mo hinh tot nhat) ─────────────────
 print('Ve Hinh 4.6...')
-pred_us = _equity_preds_pd(res_us, res_us_xgb, res_us_dl, best_us_name)
-pred_us['time'] = pd.to_datetime(pred_us['time'])
-pred_us = pred_us.sort_values('time').reset_index(drop=True)
-pred_us['act']   = (pred_us['next_close'] - pred_us['close']) / pred_us['close']
-pred_us['strat'] = pred_us.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
-d_us = pred_us.groupby('time')[['act', 'strat']].mean().reset_index()
-d_us['eq_bnh']   = (1 + d_us['act']).cumprod()   * 100
-d_us['eq_strat'] = (1 + d_us['strat']).cumprod() * 100
+# Tai su dung d_us da tinh o cell 'BACKTEST EQUITY CURVE' (TRUE B&H toan bo phien).
+if 'd_us' not in globals():
+    d_us = _true_equity(df_us_all, _winner_pred_map(res_us, res_us_xgb, res_us_dl, best_us_name))
 fig, ax = plt.subplots(figsize=(14, 6))
 ax.plot(d_us['time'], d_us['eq_strat'], color='#2563EB', lw=2,   label='Chien luoc (Strategy)')
 ax.plot(d_us['time'], d_us['eq_bnh'],   color='gray',   lw=1.5, ls='--', label='Mua & Giu (B&H)')
@@ -3109,14 +3069,9 @@ plt.tight_layout(); save_fig(fig, 'Hinh_4_6', '4.6')
 
 # ── Hinh 4.7: Backtest Equity Curve — VN (mo hinh tot nhat) ─────────────────
 print('Ve Hinh 4.7...')
-pred_vn = _equity_preds_pd(res_vn, res_vn_xgb, res_vn_dl, best_vn_name)
-pred_vn['time'] = pd.to_datetime(pred_vn['time'])
-pred_vn = pred_vn.sort_values('time').reset_index(drop=True)
-pred_vn['act']   = (pred_vn['next_close'] - pred_vn['close']) / pred_vn['close']
-pred_vn['strat'] = pred_vn.apply(lambda r: r['act'] if r['prediction'] == 1 else 0, axis=1)
-d_vn = pred_vn.groupby('time')[['act', 'strat']].mean().reset_index()
-d_vn['eq_bnh']   = (1 + d_vn['act']).cumprod()   * 100
-d_vn['eq_strat'] = (1 + d_vn['strat']).cumprod() * 100
+# Tai su dung d_vn da tinh o cell 'BACKTEST EQUITY CURVE' (TRUE B&H toan bo phien).
+if 'd_vn' not in globals():
+    d_vn = _true_equity(df_vn_all, _winner_pred_map(res_vn, res_vn_xgb, res_vn_dl, best_vn_name))
 fig, ax = plt.subplots(figsize=(14, 6))
 ax.plot(d_vn['time'], d_vn['eq_strat'], color='#16A34A', lw=2,   label='Chien luoc (Strategy)')
 ax.plot(d_vn['time'], d_vn['eq_bnh'],   color='gray',   lw=1.5, ls='--', label='Mua & Giu (B&H)')
@@ -3830,19 +3785,19 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
 
 
       Saved: figures/Hinh_4_8.png
-    Fetch: 2025-12-09 -> 2026-06-08
+    Fetch: 2025-12-19 -> 2026-06-18
     Demo hien thi tu: 2026-06-01
     Fetching AAPL ...
-      AAPL: 123 rows  (2025-12-09 - 2026-06-05)
+      AAPL: 122 rows  (2025-12-19 - 2026-06-16)
     Fetching VCB ...
-      VCB : 129 rows  (2025-12-09 - 2026-06-05)
+      VCB : 129 rows  (2025-12-19 - 2026-06-17)
     Fetching FPT ...
     
 
-    2026-06-07 09:30:27 - vnstock.common.data - INFO - Not a stock. Company and finance data unavailable.
+    2026-06-17 15:03:05 - vnstock.common.data - INFO - Not a stock. Company and finance data unavailable.
     
 
-      FPT : 129 rows  (2025-12-09 - 2026-06-05)
+      FPT : 129 rows  (2025-12-19 - 2026-06-17)
     Fetching VNINDEX (KBS)...
     
       ╭──────────────────────────────────────────────────────────╮
@@ -3865,25 +3820,25 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
     
       VNINDEX: 119 rows
     Fetching S&P 500 (^GSPC)...
-      S&P500: 123 rows
+      S&P500: 122 rows
     Fetching VIX (^VIX)...
       VIX: 124 rows
     Fetching 10Y Treasury (^TNX)...
-      TNX: 123 rows
+      TNX: 120 rows
     Fetching 3M T-bill (^IRX)...
-      IRX: 123 rows
+      IRX: 120 rows
     
     Tat ca fetch xong. Se du bao phan tu 2026-06-01 tro di.
-    Features computed: {'AAPL': (123, 67), 'VCB': (129, 58), 'FPT': (129, 58)}
+    Features computed: {'AAPL': (122, 67), 'VCB': (129, 58), 'FPT': (129, 58)}
     Columns sample: ['sector_idx', 'vni_ret1d', 'vni_mom5', 'vni_ma_ratio']
-    Predicting AAPL (model=GBT)...
-      AAPL: GBT (acc=0.526) [proxy: XGBoost inference] | 74 rows | features=55
+    Predicting AAPL (model=LR)...
+      AAPL: LR (acc=0.489) [proxy: XGBoost inference] | 73 rows | features=55
     Predicting VCB (model=GRU)...
-      VCB: GRU (acc=0.564) | 52 rows
+      VCB: GRU (acc=0.564) | 57 rows
     Predicting FPT (model=GRU)...
-      FPT: GRU (acc=0.564) | 52 rows
+      FPT: GRU (acc=0.564) | 57 rows
     Du bao hoan tat!
-    {'AAPL': 74, 'VCB': 52, 'FPT': 52}
+    {'AAPL': 73, 'VCB': 57, 'FPT': 57}
     Ve Hinh 5.1...
     
 
@@ -3906,19 +3861,19 @@ for fn in ['Hinh_4_1', 'Hinh_4_2', 'Hinh_4_3', 'Hinh_4_4', 'Hinh_4_5',
       Saved: figures/Hinh_5_2.png
     
     ============================================================
-    HOAN TAT! Mo hinh tot nhat: US=GBT | VN=GRU
+    HOAN TAT! Mo hinh tot nhat: US=LR | VN=GRU
     Tat ca hinh da luu vao: figures/
     ============================================================
       Hinh_4_1.png  (108 KB)
       Hinh_4_2.png  (74 KB)
-      Hinh_4_3.png  (157 KB)
-      Hinh_4_4.png  (123 KB)
-      Hinh_4_5.png  (124 KB)
-      Hinh_4_6.png  (206 KB)
-      Hinh_4_7.png  (131 KB)
-      Hinh_4_8.png  (175 KB)
-      Hinh_5_1.png  (134 KB)
-      Hinh_5_2.png  (182 KB)
+      Hinh_4_3.png  (152 KB)
+      Hinh_4_4.png  (122 KB)
+      Hinh_4_5.png  (121 KB)
+      Hinh_4_6.png  (196 KB)
+      Hinh_4_7.png  (195 KB)
+      Hinh_4_8.png  (180 KB)
+      Hinh_5_1.png  (169 KB)
+      Hinh_5_2.png  (220 KB)
     
 
 ## PHẦN CUỐI: TỔNG HỢP TẤT CẢ CẢI TIẾN
