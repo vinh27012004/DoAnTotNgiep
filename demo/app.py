@@ -58,8 +58,9 @@ NAMES = {**NAME_VN, **NAME_US}
 _CSS = """
 <style>
 /* Ẩn chrome mặc định của Streamlit */
-#MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"], footer {visibility:hidden; height:0;}
-.block-container {padding-top:1.2rem; padding-bottom:2rem; max-width:1400px;}
+#MainMenu, [data-testid="stToolbar"], [data-testid="stDecoration"],
+[data-testid="stHeader"], footer {visibility:hidden; height:0;}
+.block-container {padding-top:2.2rem; padding-bottom:2rem; max-width:1400px;}
 
 /* Nền */
 .stApp {background:#0E1117;}
@@ -212,6 +213,54 @@ def price_chart(df, ticker):
     fig.add_hline(y=30, line=dict(color='green', dash='dot', width=0.8), row=3, col=1)
     fig.update_layout(height=720, xaxis_rangeslider_visible=False, hovermode='x unified',
                       margin=dict(l=10, r=10, t=40, b=10), legend=dict(orientation='h', y=1.02))
+    return fig
+
+
+def forecast_chart(df_p, ticker, mkt, prob_up, pred_up, forecast_date, n=45):
+    """Biểu đồ giá n phiên gần nhất + điểm dự báo phiên kế tiếp (mũi tên TĂNG/GIẢM),
+    đường chiếu nét đứt và dải ngưỡng ±2%/±1% (vùng 'đi ngang'). Hướng dựa theo dự báo;
+    biên độ chiếu = đúng ngưỡng quyết định (không bịa độ lớn)."""
+    d = df_p.dropna(subset=['close']).tail(n).copy()
+    thr = 0.02 if mkt == 'VN' else 0.01
+    last_t = d['time'].iloc[-1]
+    last_c = float(d['close'].iloc[-1])
+    fdate = pd.Timestamp(forecast_date)
+    x_end = fdate + pd.Timedelta(days=max(4, n // 8))     # chừa khoảng trống bên phải
+    col = '#26a69a' if pred_up else '#ef5350'
+    proj = last_c * (1 + thr) if pred_up else last_c * (1 - thr)
+
+    fig = go.Figure()
+    # Dải ngưỡng quanh giá hiện tại (vùng coi như đi ngang) cho phiên kế tiếp
+    fig.add_trace(go.Scatter(
+        x=[last_t, x_end, x_end, last_t],
+        y=[last_c * (1 - thr), last_c * (1 - thr), last_c * (1 + thr), last_c * (1 + thr)],
+        fill='toself', fillcolor='rgba(120,120,200,0.10)', line=dict(width=0),
+        hoverinfo='skip', showlegend=False))
+    # Đường giá lịch sử
+    fig.add_trace(go.Scatter(x=d['time'], y=d['close'], mode='lines', name='Giá đóng',
+                             line=dict(color='#5B9CF6', width=2),
+                             hovertemplate='%{x|%d/%m/%Y}: %{y:,.2f}<extra></extra>'))
+    # Điểm hiện tại
+    fig.add_trace(go.Scatter(x=[last_t], y=[last_c], mode='markers', showlegend=False,
+                             marker=dict(color='#E6EDF3', size=9, line=dict(color='#0E1117', width=1)),
+                             hovertemplate='Hiện tại: %{y:,.2f}<extra></extra>'))
+    # Đường chiếu dự báo (nét đứt)
+    fig.add_trace(go.Scatter(x=[last_t, fdate], y=[last_c, proj], mode='lines', showlegend=False,
+                             line=dict(color=col, width=2, dash='dot'), hoverinfo='skip'))
+    # Mũi tên dự báo
+    fig.add_trace(go.Scatter(
+        x=[fdate], y=[proj], mode='markers+text', showlegend=False,
+        marker=dict(color=col, size=18, symbol='triangle-up' if pred_up else 'triangle-down',
+                    line=dict(color='#0E1117', width=1)),
+        text=[f"  {'TĂNG' if pred_up else 'GIẢM'} · {prob_up*100:.0f}%"],
+        textposition='middle right', textfont=dict(color=col, size=13),
+        hovertemplate=f"Dự báo {fdate.date()}<br>P(tăng) = {prob_up*100:.1f}%<extra></extra>"))
+    fig.update_layout(
+        height=300, margin=dict(l=10, r=10, t=46, b=10), autosize=True,
+        title=dict(text=f"{ticker} — {n} phiên gần nhất & dự báo phiên {fdate.date()}", font=dict(size=14)),
+        hovermode='x unified', showlegend=False,
+        xaxis=dict(showgrid=False, range=[d['time'].iloc[0], x_end]),
+        yaxis=dict(title='Giá đóng cửa'))
     return fig
 
 
@@ -424,14 +473,21 @@ def tab_predict(art):
     if chosen is not None:
         df_p = predict_series(ticker, mkt, chosen)
         pinfo = router['per_ticker'].get(ticker, {})
-        edge_t = pinfo.get('test_edge')
+        # Chỉ số test khớp ĐÚNG model đang chọn (Auto hoặc chọn tay), không chỉ model thắng
+        cm = (pinfo.get('cand_metrics') or {}).get(chosen)
+        if cm is None:                       # fallback JSON cũ: dùng metric top-level
+            cm = {'acc': pinfo.get('test_acc'), 'edge': pinfo.get('test_edge'),
+                  'auc': pinfo.get('test_auc'), 'f1': pinfo.get('test_f1'),
+                  'precision': pinfo.get('test_precision'), 'recall': pinfo.get('test_recall')}
+        edge_t = cm.get('edge')
         suffix = f" · Edge test {edge_t*100:+.1f}%" if edge_t is not None else ""
         model_short = MODEL_LABELS.get(chosen, chosen)
         model_label = f"{model_short}{suffix}"
-        ta_val = float(pinfo.get('test_acc') or 0.0)
+        ta_val = float(cm.get('acc') or 0.0)
     else:
         df_p, model_label, ta_val = _predict_for_tab(df, ticker, mkt, art)
         model_short = model_label.split(' ')[0]
+        cm = None
     valid = df_p.dropna(subset=['prob_up'])
     if valid.empty:
         st.warning("Không đủ dữ liệu để tính features cho mã này.")
@@ -444,17 +500,10 @@ def tab_predict(art):
     with c2:
         g1, g2 = st.columns([1.2, 1])
         with g1:
-            gauge = go.Figure(go.Indicator(
-                mode="gauge+number", value=prob_up * 100,
-                title={'text': f"Xác suất TĂNG — phiên kế tiếp {forecast_date}"},
-                number={'suffix': "%"},
-                gauge={'axis': {'range': [0, 100]},
-                       'bar': {'color': '#26a69a' if pred_up else '#ef5350'},
-                       'steps': [{'range': [0, 50], 'color': '#ffebee'},
-                                 {'range': [50, 100], 'color': '#e8f5e9'}],
-                       'threshold': {'line': {'color': 'black', 'width': 3}, 'value': 50}}))
-            gauge.update_layout(height=280, margin=dict(l=20, r=20, t=50, b=10))
-            st.plotly_chart(gauge, use_container_width=True)
+            st.plotly_chart(
+                forecast_chart(df_p, ticker, mkt, prob_up, pred_up, forecast_date),
+                use_container_width=True, key="pred_forecast",
+                config={"responsive": True, "displayModeBar": False})
         with g2:
             st.markdown("###")
             if pred_up:
@@ -465,8 +514,32 @@ def tab_predict(art):
                 f"Mô hình: **{model_label}** · Phiên gần nhất: {row['time'].date()} · "
                 f"Dự báo cho phiên kế tiếp: {forecast_date}"
             )
-            st.metric(f"Độ chính xác ({model_short}) trên mã này",
-                      f"{ta_val*100:.1f}%")
+
+    # ── Bảng chỉ số đầy đủ của model đang dùng (minh bạch: đừng chỉ nhìn Accuracy) ──
+    if chosen is not None and cm:
+        st.caption(
+            f"📊 **Chỉ số của {MODEL_LABELS.get(chosen, chosen)} trên mã {ticker}** "
+            "(tập test out-of-time ≥2024). Nhãn lệch nên **Accuracy có thể \"cao giả\"** — "
+            "hãy xem **Edge** (giỏi hơn đoán mò bao nhiêu) và **F1/Precision/Recall** của lớp "
+            "*Tăng* để đánh giá thật chất lượng dự báo.")
+        mc = st.columns(6)
+        _p = lambda x: "—" if x is None else f"{x*100:.1f}%"
+        mc[0].metric("Accuracy", _p(cm.get('acc')))
+        ev = cm.get('edge')
+        mc[1].metric("Edge vs Naive", "—" if ev is None else f"{ev*100:+.1f}%",
+                     help="Accuracy − tỉ lệ đoán theo lớp đa số. > 0 ⇒ thực sự giỏi hơn đoán mò.")
+        mc[2].metric("F1 (lớp Tăng)", _p(cm.get('f1')),
+                     help="Trung bình điều hòa của Precision & Recall cho lớp 'Tăng'. "
+                          "F1 thấp dù Accuracy cao ⇒ model bỏ lỡ tín hiệu tăng.")
+        mc[3].metric("Precision", _p(cm.get('precision')),
+                     help="Khi model báo 'Tăng' thì đúng bao nhiêu %.")
+        mc[4].metric("Recall", _p(cm.get('recall')),
+                     help="Trong số phiên thực sự Tăng, model bắt được bao nhiêu %.")
+        av = cm.get('auc')
+        mc[5].metric("AUC", "—" if av is None else f"{av:.3f}",
+                     help="Khả năng phân biệt 2 lớp (0.5 = ngẫu nhiên, 1.0 = hoàn hảo).")
+    else:
+        st.metric(f"Độ chính xác ({model_short}) trên mã này", f"{ta_val*100:.1f}%")
 
     st.divider()
     st.markdown(f"**Backtest gần đây** — dự báo (**{model_short}**) "
@@ -753,7 +826,10 @@ def tab_model_router():
                 {'Mã': t, 'Model chọn': MODEL_LABELS.get(v['best_model'], v['best_model']),
                  'Khác global?': '✓' if v.get('overridden') else '',
                  'Edge test': f"{v['test_edge']*100:+.1f}%",
-                 'Acc test': f"{v['test_acc']*100:.1f}%"}
+                 'Acc test': f"{v['test_acc']*100:.1f}%",
+                 'F1 (Tăng)': f"{v.get('test_f1', 0)*100:.1f}%",
+                 'Precision': f"{v.get('test_precision', 0)*100:.1f}%",
+                 'Recall': f"{v.get('test_recall', 0)*100:.1f}%"}
                 for t, v in pt.items()])
             if not tbl.empty:
                 tbl = tbl.sort_values('Edge test', ascending=False)

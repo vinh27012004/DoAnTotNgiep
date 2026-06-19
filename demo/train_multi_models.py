@@ -34,7 +34,8 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.ensemble import RandomForestClassifier, HistGradientBoostingClassifier
 from sklearn.svm import LinearSVC
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import (accuracy_score, roc_auc_score,
+                             f1_score, precision_score, recall_score)
 from xgboost import XGBClassifier
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -231,33 +232,53 @@ def train_market(market):
                     if val_scores[naive_pick][0] - val_scores[global_best][0] >= MARGIN
                     else global_best)
 
-        def _test_edge(m):
+        def _test_metrics(m):
+            """Đầy đủ chỉ số test cho 1 model trên mã này (acc/edge/auc/F1/prec/recall).
+            F1/Precision/Recall tính cho lớp 'Tăng' (label=1)."""
             ptm = pt[m][mt]
             if np.any(pd.isna(ptm)):
                 return None
-            acc, naive, edge = _edge(yt[mt], (ptm >= 0.5).astype(int))
-            return acc, naive, edge, _auc(yt[mt], ptm)
+            pred = (ptm >= 0.5).astype(int)
+            acc, naive, edge = _edge(yt[mt], pred)
+            return {
+                'acc': round(float(acc), 4),
+                'naive': round(float(naive), 4),
+                'edge': round(float(edge), 4),
+                'auc': round(float(_auc(yt[mt], ptm)), 4),
+                'f1': round(float(f1_score(yt[mt], pred, pos_label=1, zero_division=0)), 4),
+                'precision': round(float(precision_score(yt[mt], pred, pos_label=1, zero_division=0)), 4),
+                'recall': round(float(recall_score(yt[mt], pred, pos_label=1, zero_division=0)), 4),
+                'n_test': int(mt.sum()),
+            }
 
-        rg = _test_edge(global_best)
-        rn = _test_edge(naive_pick)
-        rr = _test_edge(reg_pick)
-        if rg: edges['global'].append(rg[2])
-        if rn: edges['naive'].append(rn[2])
-        if rr: edges['reg'].append(rr[2])
+        # Chỉ số test của TẤT CẢ candidate cho mã này -> app hiện đúng theo model người dùng chọn
+        cand_metrics = {m: r for m in cand if (r := _test_metrics(m)) is not None}
+        rr = cand_metrics.get(reg_pick)
+        if rr is None:           # model được chọn thiếu dự đoán test -> bỏ mã
+            continue
+
+        rg = cand_metrics.get(global_best)
+        rn = cand_metrics.get(naive_pick)
+        if rg: edges['global'].append(rg['edge'])
+        if rn: edges['naive'].append(rn['edge'])
+        edges['reg'].append(rr['edge'])
         wins_naive[naive_pick] = wins_naive.get(naive_pick, 0) + 1
         wins_reg[reg_pick] = wins_reg.get(reg_pick, 0) + 1
 
-        acc, naive, edge, auc = rr
         per_ticker[tk] = {
             'best_model': reg_pick,                 # model app sẽ dùng cho mã này
             'naive_pick': naive_pick,               # lựa chọn nếu KHÔNG regularize
             'overridden': bool(reg_pick != global_best),
             'val_edge': round(float(val_scores[reg_pick][0]), 4),
-            'test_acc': round(float(acc), 4),
-            'test_naive': round(float(naive), 4),
-            'test_edge': round(float(edge), 4),
-            'test_auc': round(float(auc), 4),
-            'n_test': int(mt.sum()),
+            'test_acc': rr['acc'],
+            'test_naive': rr['naive'],
+            'test_edge': rr['edge'],
+            'test_auc': rr['auc'],
+            'test_f1': rr['f1'],
+            'test_precision': rr['precision'],
+            'test_recall': rr['recall'],
+            'n_test': rr['n_test'],
+            'cand_metrics': cand_metrics,           # chỉ số test mọi model -> khớp khi chọn tay
         }
 
     mean_edge = {k: (float(np.nanmean(v)) if v else float('nan')) for k, v in edges.items()}
